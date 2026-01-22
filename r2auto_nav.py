@@ -30,7 +30,7 @@ speedchange = 0.05
 occ_bins = [-1, 0, 100, 101]
 stop_distance = 0.25
 front_angle = 30
-front_angles = range(-front_angle,front_angle+1,1)
+front_angles = list(range(30))+list(range(330,360))
 scanfile = 'lidar.txt'
 mapfile = 'map.txt'
 
@@ -126,12 +126,33 @@ class AutoNav(Node):
 
     def scan_callback(self, msg):
         # self.get_logger().info('In scan_callback')
-        # create numpy array
-        self.laser_range = np.array(msg.ranges)
+        # create numpy 
+        tmp = np.array(msg.ranges)
+        # self.get_logger().info('size %d' % len(tmp))
+        real = [0 for i in range(360)]
+        
+        # (measured_angle * 3/2 + 180) % 360 = real_angle
+        
+        # tmp[measured_angle] = real[real_angle]
+        
+        # [#0 #1 #2 ... #240] --- [#0 #1 ... #360]  --- [#180 #181 ... #359 #0 ... #179]
+        #
+        
+        for i in range(len(tmp)):
+            real[int((i * 3/2 + 180)%360)] = tmp[i]
+        
+        self.laser_range = np.array(real)
+        # self.laser_range = np.mod(self.laser_range,360,where=~np.isnan(self.laser_range))
+        # self.get_logger().info(str(self.laser_range))
+        
         # print to file
         # np.savetxt(scanfile, self.laser_range)
         # replace 0's with nan
         self.laser_range[self.laser_range==0] = np.nan
+        
+        
+        lr2i = np.nanargmin(self.laser_range)
+        self.get_logger().info('Shortest distance at %i degrees' % lr2i)
 
 
     # function to rotate the TurtleBot
@@ -189,7 +210,7 @@ class AutoNav(Node):
 
 
     def pick_direction(self):
-        # self.get_logger().info('In pick_direction')
+        self.get_logger().info('In pick_direction')
         if self.laser_range.size != 0:
             # use nanargmax as there are nan's in laser_range added to replace 0's
             lr2i = np.nanargmax(self.laser_range)
