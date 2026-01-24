@@ -62,6 +62,15 @@ class AutoNav(Node):
     def __init__(self):
         super().__init__('auto_nav')
         
+        # declare parameters
+        self.declare_parameter("in_sim", False)
+        self.in_sim = bool(self.get_parameter("in_sim").value)
+        
+        if self.in_sim:
+            self.get_logger().info("/auto_nav node: SIM mode")
+        else:
+            self.get_logger().info("/auto_nav node: Real Robot mode")
+        
         # create publisher for moving TurtleBot
         self.publisher_ = self.create_publisher(Twist,'cmd_vel',10)
         # self.get_logger().info('Created publisher')
@@ -121,32 +130,36 @@ class AutoNav(Node):
         # self.occdata = np.uint8(oc2.reshape(msg.info.height,msg.info.width,order='F'))
         self.occdata = np.uint8(oc2.reshape(msg.info.height,msg.info.width))
         # print to file
-        # np.savetxt(mapfile, self.occdata)
+        np.savetxt(mapfile, self.occdata)
 
 
     def scan_callback(self, msg):
         # self.get_logger().info('In scan_callback')
-        # create numpy 
-        tmp = np.array(msg.ranges)
-        # self.get_logger().info('size %d' % len(tmp))
-        real = [0 for i in range(360)]
+        # create numpy array
         
-        # (measured_angle * 3/2 + 180) % 360 = real_angle
-        
-        # tmp[measured_angle] = real[real_angle]
-        
-        # [#0 #1 #2 ... #240] --- [#0 #1 ... #360]  --- [#180 #181 ... #359 #0 ... #179]
-        #
-        
-        for i in range(len(tmp)):
-            real[int((i * 3/2 + 180)%360)] = tmp[i]
-        
-        self.laser_range = np.array(real)
-        # self.laser_range = np.mod(self.laser_range,360,where=~np.isnan(self.laser_range))
-        # self.get_logger().info(str(self.laser_range))
+        if self.in_sim:
+            self.laser_range = np.array(msg.ranges)
+        else:
+            tmp = np.array(msg.ranges)
+            # self.get_logger().info('size %d' % len(tmp))
+            real = [0 for i in range(360)]
+
+            # (measured_angle * 3/2 + 180) % 360 = real_angle
+
+            # tmp[measured_angle] = real[real_angle]
+
+            # [#0 #1 #2 ... #240] --- [#0 #1 ... #360]  --- [#180 #181 ... #359 #0 ... #179]
+            #
+
+            for i in range(len(tmp)):
+                real[int((i * 3/2 + 180)%360)] = tmp[i]
+
+            self.laser_range = np.array(real)
+            # self.laser_range = np.mod(self.laser_range,360,where=~np.isnan(self.laser_range))
+            # self.get_logger().info(str(self.laser_range))
         
         # print to file
-        # np.savetxt(scanfile, self.laser_range)
+        np.savetxt(scanfile, self.laser_range)
         # replace 0's with nan
         self.laser_range[self.laser_range==0] = np.nan
         
