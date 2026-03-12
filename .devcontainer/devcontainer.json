@@ -1,0 +1,20 @@
+{
+  "name": "ros2-jazzy-nav2",
+  "dockerComposeFile": [
+    "../compose.yaml"
+  ],
+  "service": "ros",
+  "workspaceFolder": "/workspaces/ros2_ws",
+  "remoteUser": "ros",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-python.python",
+        "ms-iot.vscode-ros",
+        "ms-azuretools.vscode-docker",
+        "twxs.cmake"
+      ]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+services:
+  ros:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        USER_UID: ${UID}
+        USER_GID: ${GID}
+    container_name: jazzy_robot_ws
+    stdin_open: true
+    tty: true
+    init: true
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    volumes:
+      - ./src:/workspaces/ros2_ws/src
+      - ./maps:/workspaces/ros2_ws/maps
+      - ./config:/workspaces/ros2_ws/config
+      - ./bags:/workspaces/ros2_ws/bags
+      - ./models:/workspaces/ros2_ws/models
+      - ./scripts:/workspaces/ros2_ws/scripts
+      - ~/.ros:/home/ros/.ros
+    working_dir: /workspaces/ros2_ws
+    command: bash
