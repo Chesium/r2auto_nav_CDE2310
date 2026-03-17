@@ -17,6 +17,7 @@ def generate_launch_description():
     g3gzsim_dir = get_package_share_directory("g3gzsim")
     nav2_params_file = os.path.join(g3gzsim_dir, "nav2", "nav2_params.yaml")
     rviz_config_file = os.path.join(g3gzsim_dir, "rviz", "nav2_default_view.rviz")
+    world_file = os.path.join(g3gzsim_dir, "worlds", "tb3_sandbox.sdf.xacro")
 
     tb3_simulation_launch_action = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(tb3_simulation_launch_file),
@@ -26,6 +27,7 @@ def generate_launch_description():
             "map": "",
             "params_file": nav2_params_file,
             "rviz_config_file": rviz_config_file,
+            "world": world_file,
         }.items(),
     )
 
