@@ -1,0 +1,14 @@
+frontier_explorer:
+  ros__parameters:
+    map_topic: /map
+    global_frame: map
+    robot_base_frame: base_link
+    occupied_threshold: 50
+    frontier_min_cluster_size: 10
+    min_goal_distance: 0.35
+    planning_rate_hz: 1.0
+    progress_rate_hz: 2.0
+    goal_timeout_sec: 120.0
+    blacklist_ttl_sec: 60.0
+    completion_patience_cycles: 5
+    autostart: false
