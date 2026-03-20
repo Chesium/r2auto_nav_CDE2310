@@ -11,8 +11,12 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>ros_gz_image</depend>
+  <depend>ros_gz_sim</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
+    <gazebo_ros GAZEBO_MODEL_PATH="${prefix}/models"/>
   </export>
 </package>
