@@ -131,6 +131,58 @@ def snap_centroid_to_cluster_cell(cluster: Sequence[int], meta: GridMeta) -> int
     )
 
 
+def select_cluster_goal_cell(
+    cluster: Sequence[int],
+    meta: GridMeta,
+    robot_xy: tuple[float, float],
+    min_goal_distance: float,
+) -> int:
+    """Fallback from the centroid representative to another cell in the same cluster if needed."""
+
+    centroid_cell = snap_centroid_to_cluster_cell(cluster, meta)
+    centroid_xy = index_to_world(meta, centroid_cell)
+
+    if euclidean_distance(robot_xy, centroid_xy) >= min_goal_distance:
+        return centroid_cell
+
+    eligible_cells = []
+    for cell in cluster:
+        cell_xy = index_to_world(meta, cell)
+        distance = euclidean_distance(robot_xy, cell_xy)
+        if distance >= min_goal_distance:
+            eligible_cells.append((distance, cell))
+
+    if not eligible_cells:
+        return centroid_cell
+
+    return min(eligible_cells, key=lambda item: (item[0], item[1]))[1]
+
+
+def count_unknown_cells_near_point(
+    data: Sequence[int],
+    meta: GridMeta,
+    center_xy: tuple[float, float],
+    radius: float,
+) -> int:
+    radius_cells = max(0, int(math.ceil(radius / meta.resolution)))
+    center_col = int((center_xy[0] - meta.origin_x) / meta.resolution)
+    center_row = int((center_xy[1] - meta.origin_y) / meta.resolution)
+    count = 0
+
+    for row in range(center_row - radius_cells, center_row + radius_cells + 1):
+        if row < 0 or row >= meta.height:
+            continue
+        for col in range(center_col - radius_cells, center_col + radius_cells + 1):
+            if col < 0 or col >= meta.width:
+                continue
+            index = cell_to_index(row, col, meta.width)
+            cell_xy = index_to_world(meta, index)
+            if euclidean_distance(center_xy, cell_xy) <= radius and data[index] == -1:
+                count += 1
+
+    return count
+
+
 def extract_frontier_clusters(
     data: Sequence[int],
     meta: GridMeta,

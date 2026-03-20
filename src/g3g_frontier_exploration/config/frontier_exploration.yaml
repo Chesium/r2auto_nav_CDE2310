@@ -5,7 +5,10 @@ frontier_explorer:
     robot_base_frame: base_link
     occupied_threshold: 50
     frontier_min_cluster_size: 10
-    min_goal_distance: 0.35
+    min_goal_distance: 0.8
+    frontier_region_resolution: 1.0
+    information_gain_radius: 1.25
+    min_information_gain_cells: 5
     planning_rate_hz: 1.0
     progress_rate_hz: 2.0
     goal_timeout_sec: 120.0

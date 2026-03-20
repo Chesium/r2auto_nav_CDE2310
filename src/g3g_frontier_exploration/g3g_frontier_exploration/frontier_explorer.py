@@ -25,12 +25,14 @@ from tf2_ros import TransformListener
 from visualization_msgs.msg import Marker
 from visualization_msgs.msg import MarkerArray
 
+from g3g_frontier_exploration.frontier_utils import count_unknown_cells_near_point
 from g3g_frontier_exploration.frontier_utils import ExpiringBlacklist
 from g3g_frontier_exploration.frontier_utils import GridMeta
 from g3g_frontier_exploration.frontier_utils import euclidean_distance
 from g3g_frontier_exploration.frontier_utils import extract_frontier_clusters
 from g3g_frontier_exploration.frontier_utils import index_to_world
 from g3g_frontier_exploration.frontier_utils import make_goal_key
+from g3g_frontier_exploration.frontier_utils import select_cluster_goal_cell
 
 
 class FrontierExplorer(BasicNavigator):
@@ -45,6 +47,9 @@ class FrontierExplorer(BasicNavigator):
         self.declare_parameter("occupied_threshold", 50)
         self.declare_parameter("frontier_min_cluster_size", 10)
         self.declare_parameter("min_goal_distance", 0.35)
+        self.declare_parameter("frontier_region_resolution", 1.0)
+        self.declare_parameter("information_gain_radius", 1.25)
+        self.declare_parameter("min_information_gain_cells", 5)
         self.declare_parameter("planning_rate_hz", 1.0)
         self.declare_parameter("progress_rate_hz", 2.0)
         self.declare_parameter("goal_timeout_sec", 120.0)
@@ -52,8 +57,12 @@ class FrontierExplorer(BasicNavigator):
         self.declare_parameter("completion_patience_cycles", 5)
         self.declare_parameter("autostart", False)
 
-        self.map_topic = self.get_parameter("map_topic").get_parameter_value().string_value
-        self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value
+        self.map_topic = (
+            self.get_parameter("map_topic").get_parameter_value().string_value
+        )
+        self.global_frame = (
+            self.get_parameter("global_frame").get_parameter_value().string_value
+        )
         self.robot_base_frame = (
             self.get_parameter("robot_base_frame").get_parameter_value().string_value
         )
@@ -61,10 +70,27 @@ class FrontierExplorer(BasicNavigator):
             self.get_parameter("occupied_threshold").get_parameter_value().integer_value
         )
         self.frontier_min_cluster_size = (
-            self.get_parameter("frontier_min_cluster_size").get_parameter_value().integer_value
+            self.get_parameter("frontier_min_cluster_size")
+            .get_parameter_value()
+            .integer_value
         )
         self.min_goal_distance = (
             self.get_parameter("min_goal_distance").get_parameter_value().double_value
+        )
+        self.frontier_region_resolution = (
+            self.get_parameter("frontier_region_resolution")
+            .get_parameter_value()
+            .double_value
+        )
+        self.information_gain_radius = (
+            self.get_parameter("information_gain_radius")
+            .get_parameter_value()
+            .double_value
+        )
+        self.min_information_gain_cells = (
+            self.get_parameter("min_information_gain_cells")
+            .get_parameter_value()
+            .integer_value
         )
         self.planning_rate_hz = (
             self.get_parameter("planning_rate_hz").get_parameter_value().double_value
@@ -83,7 +109,9 @@ class FrontierExplorer(BasicNavigator):
             .get_parameter_value()
             .integer_value
         )
-        self.autostart = self.get_parameter("autostart").get_parameter_value().bool_value
+        self.autostart = (
+            self.get_parameter("autostart").get_parameter_value().bool_value
+        )
 
         map_qos = QoSProfile(
             depth=1,
@@ -93,13 +121,15 @@ class FrontierExplorer(BasicNavigator):
         )
 
         self._current_map: OccupancyGrid | None = None
-        self._blacklist = ExpiringBlacklist()
+        self._cluster_blacklist = ExpiringBlacklist()
         self._enabled = False
         self._system_ready = False
         self._no_frontier_cycles = 0
         self._autostart_consumed = False
         self._active_goal_pose: PoseStamped | None = None
-        self._active_goal_key: tuple[int, int] | None = None
+        self._active_cluster_key: tuple[int, int] | None = None
+        self._active_frontier_xy: tuple[float, float] | None = None
+        self._active_unknown_count_before: int | None = None
         self._active_goal_start_sec: float | None = None
         self._cancel_active_goal_requested = False
         self._last_startup_check_sec = 0.0
@@ -140,7 +170,9 @@ class FrontierExplorer(BasicNavigator):
     def _map_callback(self, msg: OccupancyGrid) -> None:
         self._current_map = msg
 
-    def _handle_set_enabled(self, request: SetBool.Request, response: SetBool.Response) -> SetBool.Response:
+    def _handle_set_enabled(
+        self, request: SetBool.Request, response: SetBool.Response
+    ) -> SetBool.Response:
         if request.data:
             ready, reason = self._readiness_state()
             if not ready:
@@ -191,12 +223,19 @@ class FrontierExplorer(BasicNavigator):
         ready, reason = self._readiness_state()
         if ready and not self._system_ready:
             self._system_ready = True
-            self.info("Explorer is ready: map, transform, and Nav2 servers are available.")
+            self.info(
+                "Explorer is ready: map, transform, and Nav2 servers are available."
+            )
         elif not ready:
             self._system_ready = False
             self.debug(f"Explorer is still waiting for readiness: {reason}")
 
-        if self.autostart and self._system_ready and not self._autostart_consumed and not self._enabled:
+        if (
+            self.autostart
+            and self._system_ready
+            and not self._autostart_consumed
+            and not self._enabled
+        ):
             self._autostart_consumed = True
             self._enabled = True
             self._no_frontier_cycles = 0
@@ -207,7 +246,10 @@ class FrontierExplorer(BasicNavigator):
             return (False, "no map received yet")
 
         if self._lookup_robot_pose() is None:
-            return (False, f"missing transform {self.global_frame}->{self.robot_base_frame}")
+            return (
+                False,
+                f"missing transform {self.global_frame}->{self.robot_base_frame}",
+            )
 
         if not self.nav_to_pose_client.wait_for_server(timeout_sec=0.0):
             return (False, "navigate_to_pose action server unavailable")
@@ -230,7 +272,7 @@ class FrontierExplorer(BasicNavigator):
             return
 
         now_sec = self._now_seconds()
-        self._blacklist.prune(now_sec)
+        self._cluster_blacklist.prune(now_sec)
 
         map_meta = GridMeta(
             width=self._current_map.info.width,
@@ -247,8 +289,6 @@ class FrontierExplorer(BasicNavigator):
             self.frontier_min_cluster_size,
         )
 
-        self.info(f"clusters:{clusters}")
-
         ranked_candidates = []
         robot_xy = (
             robot_pose.pose.position.x,
@@ -256,22 +296,33 @@ class FrontierExplorer(BasicNavigator):
         )
 
         for cluster in clusters:
-            goal_xy = cluster.goal_xy
+            selected_goal_cell = select_cluster_goal_cell(
+                cluster.cells,
+                map_meta,
+                robot_xy,
+                self.min_goal_distance,
+            )
+            goal_xy = index_to_world(map_meta, selected_goal_cell)
             if euclidean_distance(robot_xy, goal_xy) < self.min_goal_distance:
-                self.info(f"kick {goal_xy} @1")
                 continue
 
-            goal_key = make_goal_key(*goal_xy, resolution=map_meta.resolution)
-            if self._blacklist.contains(goal_key, now_sec):
-                self.info(f"kick {goal_xy} @2")
+            cluster_key = make_goal_key(
+                *goal_xy,
+                resolution=self.frontier_region_resolution,
+            )
+            if self._cluster_blacklist.contains(cluster_key, now_sec):
                 continue
 
             goal_pose = self._make_pose_stamped(goal_xy[0], goal_xy[1])
             path = self.getPath(robot_pose, goal_pose, use_start=True)
 
             if path is None or not path.poses:
-                self._blacklist.add(goal_key, now_sec, self.blacklist_ttl_sec, payload=goal_xy)
-                self.info(f"kick {goal_xy} @3")
+                self._cluster_blacklist.add(
+                    cluster_key,
+                    now_sec,
+                    self.blacklist_ttl_sec,
+                    payload=goal_xy,
+                )
                 continue
 
             ranked_candidates.append(
@@ -279,7 +330,14 @@ class FrontierExplorer(BasicNavigator):
                     self._path_length(path),
                     -cluster.size,
                     goal_pose,
-                    goal_key,
+                    cluster_key,
+                    goal_xy,
+                    count_unknown_cells_near_point(
+                        self._current_map.data,
+                        map_meta,
+                        goal_xy,
+                        self.information_gain_radius,
+                    ),
                 )
             )
 
@@ -297,12 +355,16 @@ class FrontierExplorer(BasicNavigator):
 
         self._no_frontier_cycles = 0
         ranked_candidates.sort(key=lambda item: (item[0], item[1]))
-        _, _, goal_pose, goal_key = ranked_candidates[0]
+        _, _, goal_pose, cluster_key, frontier_xy, unknown_count_before = (
+            ranked_candidates[0]
+        )
 
         if not self.goToPose(goal_pose):
-            self.warn("Nav2 rejected the selected exploration goal. Blacklisting it temporarily.")
-            self._blacklist.add(
-                goal_key,
+            self.warn(
+                "Nav2 rejected the selected exploration goal. Blacklisting it temporarily."
+            )
+            self._cluster_blacklist.add(
+                cluster_key,
                 now_sec,
                 self.blacklist_ttl_sec,
                 payload=(goal_pose.pose.position.x, goal_pose.pose.position.y),
@@ -312,7 +374,9 @@ class FrontierExplorer(BasicNavigator):
             return
 
         self._active_goal_pose = goal_pose
-        self._active_goal_key = goal_key
+        self._active_cluster_key = cluster_key
+        self._active_frontier_xy = frontier_xy
+        self._active_unknown_count_before = unknown_count_before
         self._active_goal_start_sec = now_sec
         self._goal_publisher.publish(goal_pose)
         self._publish_markers(clusters, goal_pose)
@@ -329,10 +393,12 @@ class FrontierExplorer(BasicNavigator):
         if self._active_goal_start_sec is not None:
             elapsed = now_sec - self._active_goal_start_sec
             if elapsed > self.goal_timeout_sec:
-                self.warn("Active frontier goal timed out. Canceling and blacklisting it.")
+                self.warn(
+                    "Active frontier goal timed out. Canceling and blacklisting it."
+                )
                 self.cancelTask()
                 self.clearAllCostmaps()
-                self._blacklist_active_goal(now_sec)
+                self._blacklist_active_cluster(now_sec)
                 self._clear_active_goal_state()
                 return
 
@@ -341,7 +407,14 @@ class FrontierExplorer(BasicNavigator):
 
         result = self.getResult()
         if result == TaskResult.SUCCEEDED:
-            self.info("Reached active frontier goal successfully.")
+            if self._goal_produced_information_gain():
+                self.info("Reached active frontier goal successfully.")
+            else:
+                self.warn(
+                    "Goal reached but nearby unknown space did not shrink enough. "
+                    "Blacklisting this frontier cluster."
+                )
+                self._blacklist_active_cluster(now_sec)
             self._clear_active_goal_state()
             return
 
@@ -349,29 +422,59 @@ class FrontierExplorer(BasicNavigator):
             self._clear_active_goal_state()
             return
 
-        self.warn(f"Frontier navigation finished with result {result.name}. Retrying elsewhere.")
+        self.warn(
+            f"Frontier navigation finished with result {result.name}. Retrying elsewhere."
+        )
         self.clearAllCostmaps()
-        self._blacklist_active_goal(now_sec)
+        self._blacklist_active_cluster(now_sec)
         self._clear_active_goal_state()
 
     def _clear_active_goal_state(self) -> None:
         self._active_goal_pose = None
-        self._active_goal_key = None
+        self._active_cluster_key = None
+        self._active_frontier_xy = None
+        self._active_unknown_count_before = None
         self._active_goal_start_sec = None
         self._publish_markers([], None)
 
-    def _blacklist_active_goal(self, now_sec: float) -> None:
-        if self._active_goal_key is None or self._active_goal_pose is None:
+    def _blacklist_active_cluster(self, now_sec: float) -> None:
+        if self._active_cluster_key is None or self._active_goal_pose is None:
             return
         goal_xy = (
             self._active_goal_pose.pose.position.x,
             self._active_goal_pose.pose.position.y,
         )
-        self._blacklist.add(
-            self._active_goal_key,
+        self._cluster_blacklist.add(
+            self._active_cluster_key,
             now_sec,
             self.blacklist_ttl_sec,
             payload=goal_xy,
+        )
+
+    def _goal_produced_information_gain(self) -> bool:
+        if (
+            self._current_map is None
+            or self._active_frontier_xy is None
+            or self._active_unknown_count_before is None
+        ):
+            return True
+
+        map_meta = GridMeta(
+            width=self._current_map.info.width,
+            height=self._current_map.info.height,
+            resolution=self._current_map.info.resolution,
+            origin_x=self._current_map.info.origin.position.x,
+            origin_y=self._current_map.info.origin.position.y,
+        )
+        unknown_count_after = count_unknown_cells_near_point(
+            self._current_map.data,
+            map_meta,
+            self._active_frontier_xy,
+            self.information_gain_radius,
+        )
+        return (
+            self._active_unknown_count_before - unknown_count_after
+            >= self.min_information_gain_cells
         )
 
     def _disable_exploration(self, message: str, clear_markers: bool) -> None:
@@ -479,7 +582,7 @@ class FrontierExplorer(BasicNavigator):
         blacklist_marker.color.a = 0.8
 
         now_sec = self._now_seconds()
-        for point_xy in self._blacklist.active_entries(now_sec).values():
+        for point_xy in self._cluster_blacklist.active_entries(now_sec).values():
             if point_xy is None:
                 continue
             blacklist_marker.points.append(Point(x=point_xy[0], y=point_xy[1], z=0.0))

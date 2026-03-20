@@ -124,10 +124,17 @@ controller_server:
         time_step: 3
       AckermannConstraints:
         min_turning_r: 0.2
-      critics: [
-        "ConstraintCritic", "CostCritic", "GoalCritic",
-        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
-        "PathAngleCritic", "PreferForwardCritic"]
+      critics:
+        [
+          "ConstraintCritic",
+          "CostCritic",
+          "GoalCritic",
+          "GoalAngleCritic",
+          "PathAlignCritic",
+          "PathFollowCritic",
+          "PathAngleCritic",
+          "PreferForwardCritic",
+        ]
       ConstraintCritic:
         enabled: true
         cost_power: 1
@@ -282,7 +289,7 @@ planner_server:
     costmap_update_timeout: 1.0
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
+      tolerance: 0.3
       use_astar: false
       allow_unknown: true
 
@@ -416,9 +423,9 @@ docking_server:
     dock_prestaging_tolerance: 0.5
 
     # Types of docks
-    dock_plugins: ['simple_charging_dock']
+    dock_plugins: ["simple_charging_dock"]
     simple_charging_dock:
-      plugin: 'opennav_docking::SimpleChargingDock'
+      plugin: "opennav_docking::SimpleChargingDock"
       docking_threshold: 0.05
       staging_x_offset: -0.7
       use_external_detection_pose: true
@@ -459,7 +466,7 @@ loopback_simulator:
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
     map_frame_id: "map"
-    scan_frame_id: "base_scan"  # tb4_loopback_simulator.launch.py remaps to 'rplidar_link'
+    scan_frame_id: "base_scan" # tb4_loopback_simulator.launch.py remaps to 'rplidar_link'
     update_duration: 0.02
     scan_range_min: 0.05
     scan_range_max: 30.0

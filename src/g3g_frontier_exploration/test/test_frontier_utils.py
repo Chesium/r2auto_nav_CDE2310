@@ -1,9 +1,11 @@
+from g3g_frontier_exploration.frontier_utils import count_unknown_cells_near_point
 from g3g_frontier_exploration.frontier_utils import ExpiringBlacklist
 from g3g_frontier_exploration.frontier_utils import GridMeta
 from g3g_frontier_exploration.frontier_utils import cluster_frontier_cells
 from g3g_frontier_exploration.frontier_utils import detect_frontier_cells
 from g3g_frontier_exploration.frontier_utils import extract_frontier_clusters
 from g3g_frontier_exploration.frontier_utils import make_goal_key
+from g3g_frontier_exploration.frontier_utils import select_cluster_goal_cell
 from g3g_frontier_exploration.frontier_utils import snap_centroid_to_cluster_cell
 
 
@@ -66,3 +68,37 @@ def test_blacklist_entries_expire_and_candidates_become_selectable_again():
     assert candidate_key in blacklist.active_entries(now=12.0)
     assert blacklist.contains(candidate_key, now=16.0) is False
     assert blacklist.active_entries(now=16.0) == {}
+
+
+def test_select_cluster_goal_cell_falls_back_to_another_cell_when_needed():
+    meta = GridMeta(width=8, height=6, resolution=1.0, origin_x=0.0, origin_y=0.0)
+    cluster = (18, 19, 20, 21)
+
+    selected = select_cluster_goal_cell(
+        cluster,
+        meta,
+        robot_xy=(3.5, 2.5),
+        min_goal_distance=1.1,
+    )
+
+    assert selected == 21
+
+
+def test_count_unknown_cells_near_point_counts_only_cells_within_radius():
+    meta = GridMeta(width=5, height=5, resolution=1.0, origin_x=0.0, origin_y=0.0)
+    data = [
+        100, 100, 100, 100, 100,
+        100, -1, -1, 0, 100,
+        100, -1, 0, 0, 100,
+        100, 0, 0, 0, 100,
+        100, 100, 100, 100, 100,
+    ]
+
+    count = count_unknown_cells_near_point(
+        data,
+        meta,
+        center_xy=(2.5, 2.5),
+        radius=1.6,
+    )
+
+    assert count == 3
