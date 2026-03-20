@@ -1,3 +1,27 @@
+## Run
+
+```bash
+colcon build
+source install/setup.bash
+ros2 launch g3gzsim nav2full_test_launch.py
+```
+
+in one line: (assume you have `alias roset="source install/setup.bash"` in `~/.bashrc`)
+
+```bash
+colcon build && roset && ros2 launch g3gzsim nav2full_test_launch.py | tee test.log
+```
+
+---
+
+then, to activate the explorer, in a new terminal, run:
+
+```bash
+ros2 service call /exploration/set_enabled std_srvs/srv/SetBool "{data: true}"
+```
+
+## Misc stuff
+
 ros2 launch nav2_bringup tb3_simulation_launch.py headless:=False
 
 use slam instead of fixed map server
