@@ -1,6 +1,6 @@
 ## Portable Docker Development Environment
 
-This repo now includes a portable Docker setup for ROS 2 Jazzy on Ubuntu 24.04 with:
+This repo now includes a portable Docker setup built on top of the official `osrf/ros:jazzy-desktop` image (Ubuntu 24.04 / Noble) with:
 
 - `ros-jazzy-desktop`
 - `ros-dev-tools`

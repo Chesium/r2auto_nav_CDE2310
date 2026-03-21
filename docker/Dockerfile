@@ -1,10 +1,10 @@
-FROM ubuntu:24.04
+ARG ROS_DISTRO=jazzy
+FROM osrf/ros:${ROS_DISTRO}-desktop
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG USERNAME=ros
 ARG USER_UID=1000
 ARG USER_GID=1000
-ARG ROS_DISTRO=jazzy
 ARG TURTLEBOT3_BRANCH=jazzy
 
 ENV LANG=en_US.UTF-8
@@ -43,11 +43,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | \
-      gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] https://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo "${UBUNTU_CODENAME}") main" \
-      > /etc/apt/sources.list.d/ros2.list
-
 RUN curl -fsSL https://packages.osrfoundation.org/gazebo.gpg \
       -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
@@ -59,7 +54,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-dev-tools \
     ros-${ROS_DISTRO}-cartographer \
     ros-${ROS_DISTRO}-cartographer-ros \
-    ros-${ROS_DISTRO}-desktop \
     ros-${ROS_DISTRO}-foxglove-bridge \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-nav2-minimal-tb3-sim \
@@ -73,7 +67,7 @@ RUN groupadd --gid "${USER_GID}" "${USERNAME}" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
     chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
-RUN rosdep init
+RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi
 
 COPY docker/entrypoint.sh /usr/local/bin/navws-entrypoint
 COPY docker/portable_bashrc.sh /usr/local/share/navws/portable_bashrc.sh
