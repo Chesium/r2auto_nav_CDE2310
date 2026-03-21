@@ -50,14 +50,14 @@ Native Ubuntu 22.04 / 24.04:
 ```bash
 xhost +local:docker
 docker compose -f docker-compose.linux-host.yml up -d
-docker compose exec dev bash
+docker compose -f docker-compose.linux-host.yml exec dev bash
 ```
 
 WSL2 with Ubuntu 22.04 / 24.04 and WSLg:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.wslg.yml up -d
-docker compose exec dev bash
+docker compose -f docker-compose.yml -f docker-compose.wslg.yml exec dev bash
 ```
 
 Inside the container, the shell auto-sources:

@@ -2,8 +2,8 @@
 
 export NAV_WS="${NAV_WS:-$HOME/nav_ws}"
 
-if [[ -f /opt/ros/jazzy/setup.bash ]]; then
-  source /opt/ros/jazzy/setup.bash
+if [[ -f "/opt/ros/${ROS_DISTRO:-jazzy}/setup.bash" ]]; then
+  source "/opt/ros/${ROS_DISTRO:-jazzy}/setup.bash"
 fi
 
 if [[ -f "${NAV_WS}/docker/ros_network.env" ]]; then
