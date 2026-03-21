@@ -23,7 +23,7 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-install(DIRECTORY launch models nav2 rviz worlds
+install(DIRECTORY launch models nav2 rviz worlds urdf
   DESTINATION share/${PROJECT_NAME}/
 )
 

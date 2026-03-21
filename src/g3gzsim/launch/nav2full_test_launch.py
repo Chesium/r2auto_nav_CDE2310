@@ -22,6 +22,7 @@ def generate_launch_description():
     rviz_config_file = os.path.join(g3gzsim_dir, "rviz", "nav2_default_view.rviz")
     # world_file = os.path.join(g3gzsim_dir, "worlds", "tb3_sandbox.sdf.xacro")
     world_file = os.path.join(g3gzsim_dir, "worlds", "warehouse_world.sdf")
+    robot_file = os.path.join(g3gzsim_dir, "urdf", "tb.sdf.xacro")
     frontier_dir = get_package_share_directory("g3g_frontier_exploration")
     frontier_launch_file = os.path.join(
         frontier_dir, "launch", "frontier_exploration.launch.py"
@@ -45,6 +46,7 @@ def generate_launch_description():
             "world": world_file,
             "x_pose": "-9",
             "y_pose": "-5",
+            "robot_sdf": robot_file,
         }.items(),
     )
 
