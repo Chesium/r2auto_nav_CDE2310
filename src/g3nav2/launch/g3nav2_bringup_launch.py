@@ -26,7 +26,7 @@ def generate_launch_description():
 
     tb3_nav2_launch_action = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(tb3_nav2_launch_file),
-        launch_arguments={"params_file": nav2_params_file}.items(),
+        launch_arguments={"params_file": nav2_params_file, "map": ""}.items(),
     )
 
     ld = LaunchDescription()
