@@ -1,3 +1,109 @@
+## Portable Docker Development Environment
+
+This repo now includes a portable Docker setup for ROS 2 Jazzy on Ubuntu 24.04 with:
+
+- `ros-jazzy-desktop`
+- `ros-dev-tools`
+- Gazebo Harmonic (`gz-harmonic`)
+- Nav2 + Cartographer dependencies
+- Foxglove bridge
+- TurtleBot3 built from source in `~/turtlebot3_ws`
+
+### 1. Clone the repo to `~/nav_ws`
+
+```bash
+git clone git@github.com:Chesium/r2auto_nav_CDE2310.git -b jazzystack ~/nav_ws
+cd ~/nav_ws
+```
+
+### 2. Build the image
+
+Default Linux user mapping is `1000:1000`, which is usually correct for Ubuntu and WSL2. If your user/group IDs differ, export them before building:
+
+```bash
+export DEV_UID=$(id -u)
+export DEV_GID=$(id -g)
+docker compose build
+```
+
+### 3. Create the editable ROS network config
+
+The container will auto-create `docker/ros_network.env` from the example on first start, or you can do it yourself:
+
+```bash
+cp docker/ros_network.env.example docker/ros_network.env
+```
+
+Edit [docker/ros_network.env.example](/home/chesium/cde2310/nav_ws/docker/ros_network.env.example) as a reference, and keep your machine-specific values in `docker/ros_network.env`.
+
+The values intended for quick changes are:
+
+- `ROS_DISCOVERY_SERVER`
+- `ROS_DOMAIN_ID`
+- `ROS_DISCOVERY_INTERFACE`
+- `ROS_DISCOVERY_PORT`
+
+### 4. Start the dev container
+
+Native Ubuntu 22.04 / 24.04:
+
+```bash
+xhost +local:docker
+docker compose -f docker-compose.linux-host.yml up -d
+docker compose exec dev bash
+```
+
+WSL2 with Ubuntu 22.04 / 24.04 and WSLg:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.wslg.yml up -d
+docker compose exec dev bash
+```
+
+Inside the container, the shell auto-sources:
+
+- `/opt/ros/jazzy/setup.bash`
+- `~/turtlebot3_ws/install/setup.bash`
+- `~/nav_ws/install/setup.bash` when it exists
+
+and defines these commands:
+
+- `roset`
+- `talker`
+- `topics`
+- `foxnode`
+- `slam`
+- `rteleop`
+- `discovery`
+
+### 5. Build this workspace inside the container
+
+```bash
+cd ~/nav_ws
+colcon build --symlink-install
+roset
+```
+
+### VS Code Dev Container
+
+This repo also includes [.devcontainer/devcontainer.json](/home/chesium/cde2310/nav_ws/.devcontainer/devcontainer.json), so in VS Code you can:
+
+```bash
+code ~/nav_ws
+```
+
+then run `Dev Containers: Reopen in Container`.
+
+By default the devcontainer uses [docker-compose.yml](/home/chesium/cde2310/nav_ws/docker-compose.yml), which is the more portable choice across Ubuntu and WSL2. If you are on native Ubuntu and want host networking from inside VS Code for robot communication, change the `dockerComposeFile` entry in [.devcontainer/devcontainer.json](/home/chesium/cde2310/nav_ws/.devcontainer/devcontainer.json) to `../docker-compose.linux-host.yml`.
+
+### Notes on portability
+
+- Ubuntu 22.04 and WSL2 Ubuntu 22.04 are fine as *hosts* because Docker isolates the userland; the container itself still runs Ubuntu 24.04, which is the supported binary platform for ROS 2 Jazzy.
+- Native Ubuntu is the best option when you need ROS 2 discovery and real robot networking to behave like a normal Linux machine.
+- WSL2 is excellent for editing and local builds, and usually fine for Gazebo/RViz when WSLg is working well, but real LAN robotics workflows are a little more sensitive to Docker/WSL networking.
+- If you mainly want simulation, WSL2 is usually convenient enough. If you need to talk to the robot over the same network as the laptop, native Ubuntu will be more predictable.
+- If Foxglove is all you need from outside the container, the base compose file publishes port `8765`.
+
 ## Run Simulation
 
 ```bash

@@ -1,0 +1,35 @@
+{
+  "name": "nav_ws (ROS 2 Jazzy)",
+  "dockerComposeFile": [
+    "../docker-compose.yml"
+  ],
+  "service": "dev",
+  "workspaceFolder": "/home/ros/nav_ws",
+  "shutdownAction": "stopCompose",
+  "overrideCommand": false,
+  "remoteUser": "ros",
+  "postCreateCommand": "bash -lc 'if [ ! -f docker/ros_network.env ] && [ -f docker/ros_network.env.example ]; then cp docker/ros_network.env.example docker/ros_network.env; fi'",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+          "src"
+        ],
+        "files.associations": {
+          "*.repos": "yaml"
+        }
+      },
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-iot.vscode-ros",
+        "redhat.vscode-xml"
+      ]
+    }
+  }
+}

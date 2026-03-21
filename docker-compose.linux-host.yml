@@ -1,0 +1,27 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        USERNAME: ${DEV_USERNAME:-ros}
+        USER_UID: ${DEV_UID:-1000}
+        USER_GID: ${DEV_GID:-1000}
+    image: nav-ws:jazzy
+    container_name: nav-ws-dev
+    working_dir: /home/${DEV_USERNAME:-ros}/nav_ws
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-}
+      XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-}
+      PULSE_SERVER: ${PULSE_SERVER:-}
+      QT_X11_NO_MITSHM: "1"
+      NAV_WS: /home/${DEV_USERNAME:-ros}/nav_ws
+    volumes:
+      - .:/home/${DEV_USERNAME:-ros}/nav_ws
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    stdin_open: true
+    tty: true
+    init: true
+    ipc: host
+    network_mode: host
