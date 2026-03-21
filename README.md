@@ -1,4 +1,4 @@
-## Run
+## Run Simulation
 
 ```bash
 colcon build
@@ -19,6 +19,77 @@ then, to activate the explorer, in a new terminal, run:
 ```bash
 ros2 service call /exploration/set_enabled std_srvs/srv/SetBool "{data: true}"
 ```
+
+## Update/Connect to Hot-spot and establish ROS 2 Connection
+
+- `sudo nmtui`: Activate the connection > Find the hot-spot, connect it (this time is without password and the program will stuck)
+- wait a few seconds, restart the RPi, `ssh g3@rpi` (via Tailscale), then run `sudo nmtui` again : Edit a Connection > edit the password and disable automatic connect.
+- use `sudo nmcli c up [NAME]` to activate the connection (replace `[NAME]` with the hot-spot name), you may have to wait a bit, you can also run `ssh g3@rpi` in a new laptop terminal to monitor its progress
+- after connection, use `ip a` to find its IP address under the hot-spot connection:
+
+```
+3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether d8:3a:dd:23:92:0f brd ff:ff:ff:ff:ff:ff
+    inet 172.20.10.9/28 brd 172.20.10.15 scope global dynamic noprefixroute wlan0
+       valid_lft 2627sec preferred_lft 2627sec
+    inet6 fe80::7126:5b15:305f:2030/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+```
+
+- example output above: ip should be `172.20.10.9`
+- connect the same hot-spot on your laptop (if no ethernet and we are using phone hot-spot) and verify we can ssh into the rpi via the ip we just obtained `ssh g3@172.20.10.9` (type `yes` if necessary)
+- **Important for ROS 2 Connection:** On Laptop, ensure that you're running `fastdds discovery -i 0 -l 10.42.0.1 -p 11811` (replace the `10.42.0.1` with the actual laptop IP) in a terminal **before doing anything about ROS 2** after reboot or connect to a new hot-spot
+- **Important for ROS 2 Connection:** edit the `~/.bashrc` on **Both RPI and the laptop**: add or modify the `ROS_DISCOVERY_SERVER` IP to be the same as the **laptop** IP (obtain also by running `ip a`)
+
+```bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_SUPER_CLIENT=TRUE
+export ROS_DISCOVERY_SERVER=10.42.0.1:11811 # <- change this to *LAPTOP* IP
+export ROS_DOMAIN_ID=32
+```
+
+- `source ~/.bashrc` on both rpi and laptop
+- restart ROS daemon **on both RPi and laptop** by doing
+  - `ros2 daemon stop`
+  - `ros2 daemon start`
+- verify the ros 2 connection by
+  - on rpi, running `ros2 run demo_nodes_cpp talker`
+  - on laptop, running `ros2 topic list` (maybe twice for the change to be updated) and verify you see the `/chatter` topic being published by the RPI talker node
+
+## Setup Foxglove Dashboard
+
+- ensure you have downloaded it on your laptop
+- follow [this](https://docs.foxglove.dev/docs/getting-started/frameworks/ros2#foxglove-websocket) to install the packages and activate the foxglove node by running:
+  - `ros2 launch foxglove_bridge foxglove_bridge_launch.xml`
+    - you can set an alias for this ("foxnode")
+- open foxglove, connect via `ws://localhost:8765`
+
+## Setup Camera
+
+- after verifying that the ROS 2 Connection is fine, run
+
+```bash
+sudo bash -ic 'source /home/g3/.bashrc && source /home/g3/camera_ws/install/setup.bash && ros2 run camera_ros camera_node --ros-args -p format:=BGR888 -p camera:=0 -p role:=viewfinder -p height:=240 -p width:=320'
+```
+
+- it's fine if you see `unable to open camera calibration file` Error.
+- in Foxglove, add a *image* panel and open the `/camera/image_raw/compressed` topic to monitor the image flow
+- force kill the node by `sudo pkill -9 camera_node`
+
+## Setup Nav 2
+
+- after verifying that the ROS 2 Connection is fine, run `rosbu` on RPi to activate the robot_state / lidar / motor publisher stuff.
+  - verify on laptop by `ros2 topic list`
+  - verify you can teleoperate it by `ros2 run turtlebot3_teleop teleop_keyboard` ([reference](https://emanual.robotis.com/docs/en/platform/turtlebot3/basic_operation/#basic-operation))
+- build `g3nav2` and run `ros2 launch g3nav2 g3nav2_bringup_launch.py`
+  - this line is equal to the following which are packaged into our launch file
+  - currently the parameter is the same as the default `burger.yaml` except for:
+  - `collision_monitor > scan > source_timeout`: changed from `0.2` to `1.0` (line 414)
+
+- run slam on your laptop **without RViz UI** (since we will open an another one when activating nav 2) by `slam use_rviz:=false`
+  - assuming you have set `alias slam="ros2 launch turtlebot3_cartographer cartographer.launch.py"`
+- run the nav2 launch file: `ros2 launch turtlebot3_navigation2 navigation2.launch.py`
+  - after you see the costmap overlay (blue/purple/red stuff), do a round of `2D pose Estimate` (not sure if this is compulsory)
 
 ## Misc stuff
 
