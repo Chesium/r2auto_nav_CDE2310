@@ -34,7 +34,7 @@ The container will auto-create `docker/ros_network.env` from the example on firs
 cp docker/ros_network.env.example docker/ros_network.env
 ```
 
-Edit [docker/ros_network.env.example](/home/chesium/cde2310/nav_ws/docker/ros_network.env.example) as a reference, and keep your machine-specific values in `docker/ros_network.env`.
+Edit [docker/ros_network.env.example](docker/ros_network.env.example) as a reference, and keep your machine-specific values in `docker/ros_network.env`.
 
 The values intended for quick changes are:
 
@@ -42,6 +42,8 @@ The values intended for quick changes are:
 - `ROS_DOMAIN_ID`
 - `ROS_DISCOVERY_INTERFACE`
 - `ROS_DISCOVERY_PORT`
+
+By default, `docker/ros_network.env` now leaves `ROS_DISCOVERY_SERVER` unset so terminals inside the same dev container use normal ROS 2 peer discovery immediately. Only set `ROS_DISCOVERY_SERVER` when you are intentionally using a Fast DDS discovery server for laptop/robot communication.
 
 ### 4. Start the dev container
 
@@ -76,6 +78,18 @@ and defines these commands:
 - `rteleop`
 - `discovery`
 
+For a quick local sanity check inside the container, open two shells and run:
+
+```bash
+talker
+```
+
+```bash
+ros2 node list
+```
+
+You should see `/talker` without needing `discovery`.
+
 ### 5. Build this workspace inside the container
 
 ```bash
@@ -86,7 +100,7 @@ roset
 
 ### VS Code Dev Container
 
-This repo also includes [.devcontainer/devcontainer.json](/home/chesium/cde2310/nav_ws/.devcontainer/devcontainer.json), so in VS Code you can:
+This repo also includes [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json), so in VS Code you can:
 
 ```bash
 code ~/nav_ws
@@ -94,7 +108,7 @@ code ~/nav_ws
 
 then run `Dev Containers: Reopen in Container`.
 
-By default the devcontainer uses [docker-compose.yml](/home/chesium/cde2310/nav_ws/docker-compose.yml), which is the more portable choice across Ubuntu and WSL2. If you are on native Ubuntu and want host networking from inside VS Code for robot communication, change the `dockerComposeFile` entry in [.devcontainer/devcontainer.json](/home/chesium/cde2310/nav_ws/.devcontainer/devcontainer.json) to `../docker-compose.linux-host.yml`.
+By default the devcontainer uses [docker-compose.yml](docker-compose.yml), which is the more portable choice across Ubuntu and WSL2. If you are on native Ubuntu and want host networking from inside VS Code for robot communication, change the `dockerComposeFile` entry in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) to `../docker-compose.linux-host.yml`.
 
 ### Notes on portability
 
@@ -144,7 +158,7 @@ ros2 service call /exploration/set_enabled std_srvs/srv/SetBool "{data: true}"
 
 - example output above: ip should be `172.20.10.9`
 - connect the same hot-spot on your laptop (if no ethernet and we are using phone hot-spot) and verify we can ssh into the rpi via the ip we just obtained `ssh g3@172.20.10.9` (type `yes` if necessary)
-- **Important for ROS 2 Connection:** On Laptop, ensure that you're running `fastdds discovery -i 0 -l 10.42.0.1 -p 11811` (replace the `10.42.0.1` with the actual laptop IP) in a terminal **before doing anything about ROS 2** after reboot or connect to a new hot-spot
+- **Important for ROS 2 Connection:** On Laptop, first edit `docker/ros_network.env` so `ROS_DISCOVERY_SERVER` and `ROS_DISCOVERY_INTERFACE` both use the laptop's actual reachable IP, then run `discovery` in a terminal **before doing anything about ROS 2** after reboot or connect to a new hot-spot
 - **Important for ROS 2 Connection:** edit the `~/.bashrc` on **Both RPI and the laptop**: add or modify the `ROS_DISCOVERY_SERVER` IP to be the same as the **laptop** IP (obtain also by running `ip a`)
 
 ```bash

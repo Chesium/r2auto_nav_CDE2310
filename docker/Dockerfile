@@ -115,6 +115,8 @@ RUN mkdir -p /home/${USERNAME}/turtlebot3_ws/src && \
 
 RUN printf '\nexport NAV_WS=${NAV_WS:-$HOME/nav_ws}\n[ -f /usr/local/share/navws/portable_bashrc.sh ] && source /usr/local/share/navws/portable_bashrc.sh\n' >> /home/${USERNAME}/.bashrc
 
+ENV BASH_ENV=/usr/local/share/navws/portable_bashrc.sh
+
 WORKDIR ${NAV_WS}
 ENTRYPOINT ["/usr/local/bin/navws-entrypoint"]
 CMD ["sleep", "infinity"]

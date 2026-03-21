@@ -1,7 +1,7 @@
 {
   "name": "nav_ws (ROS 2 Jazzy)",
   "dockerComposeFile": [
-    "../docker-compose.yml"
+    "../docker-compose.linux-host.yml"
   ],
   "service": "dev",
   "workspaceFolder": "/home/ros/nav_ws",
@@ -9,6 +9,9 @@
   "overrideCommand": false,
   "remoteUser": "ros",
   "postCreateCommand": "bash -lc 'if [ ! -f docker/ros_network.env ] && [ -f docker/ros_network.env.example ]; then cp docker/ros_network.env.example docker/ros_network.env; fi'",
+  "remoteEnv": {
+    "BASH_ENV": "/usr/local/share/navws/portable_bashrc.sh"
+  },
   "customizations": {
     "vscode": {
       "settings": {
