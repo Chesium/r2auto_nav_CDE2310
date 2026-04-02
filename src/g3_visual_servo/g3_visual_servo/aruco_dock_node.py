@@ -46,8 +46,8 @@ MARKER_OBJECT_POINTS = np.array([
 
 # --------------- camera topics ---------------
 # Adapt these if your camera publishes on different topics.
-CAMERA_IMAGE_TOPIC = '/image_raw'
-CAMERA_INFO_TOPIC = '/camera_info'
+CAMERA_IMAGE_TOPIC = '/usb_cam/image_raw'
+CAMERA_INFO_TOPIC = '/usb_cam/camera_info'
 
 
 class State(Enum):
