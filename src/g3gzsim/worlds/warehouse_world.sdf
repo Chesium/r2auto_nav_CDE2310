@@ -28,9 +28,8 @@
 <plugin filename="gz-sim-sensors-system"
         name="gz::sim::systems::Sensors">
 
-  <!-- Rendering engine used by sensors.
-       "ogre2" is standard but WSL2 often works better with "ogre". -->
-  <render_engine>ogre</render_engine>
+  <!-- ogre2 supports EGL/headless rendering (required for macOS Docker) -->
+  <render_engine>ogre2</render_engine>
 
 </plugin>
 

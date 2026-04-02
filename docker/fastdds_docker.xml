@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udp_pinned</transport_id>
+        <type>UDPv4</type>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="participant_docker" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>udp_pinned</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+        <builtin>
+          <metatrafficUnicastLocatorList>
+            <locator>
+              <udpv4>
+                <address>0.0.0.0</address>
+                <port>7400</port>
+              </udpv4>
+            </locator>
+          </metatrafficUnicastLocatorList>
+          <metatraffic_external_unicast_locators>
+            <udpv4 externality="1" cost="0" mask="24">
+              <address>10.42.0.154</address>
+              <port>7400</port>
+            </udpv4>
+          </metatraffic_external_unicast_locators>
+        </builtin>
+        <defaultUnicastLocatorList>
+          <locator>
+            <udpv4>
+              <address>0.0.0.0</address>
+              <port>7401</port>
+            </udpv4>
+          </locator>
+        </defaultUnicastLocatorList>
+        <default_external_unicast_locators>
+          <udpv4 externality="1" cost="0" mask="24">
+            <address>10.42.0.154</address>
+            <port>7401</port>
+          </udpv4>
+        </default_external_unicast_locators>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

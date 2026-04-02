@@ -14,4 +14,11 @@ if [[ -f /usr/local/share/navws/portable_bashrc.sh ]]; then
   source /usr/local/share/navws/portable_bashrc.sh
 fi
 
+# Start Xvfb if running headless (no DISPLAY set) and Xvfb is available.
+# This provides a virtual framebuffer for Gazebo sensor rendering.
+if [[ -z "${DISPLAY:-}" ]] && command -v Xvfb &>/dev/null; then
+  Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
+  export DISPLAY=:99
+fi
+
 exec "$@"

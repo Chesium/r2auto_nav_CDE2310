@@ -58,7 +58,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-nav2-minimal-tb3-sim \
     ros-${ROS_DISTRO}-navigation2 \
-    ros-${ROS_DISTRO}-rmw-fastrtps-cpp && \
+    ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
+    # Mesa / EGL for headless Gazebo rendering (macOS Docker)
+    libegl1 \
+    libegl-dev \
+    libgl1-mesa-dri \
+    libgles2 \
+    mesa-utils \
+    xvfb && \
     rm -rf /var/lib/apt/lists/*
 
 RUN if getent group "${USER_GID}" >/dev/null; then \

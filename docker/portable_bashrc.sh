@@ -29,7 +29,7 @@ topics() { ros2 topic list; }
 foxnode() { ros2 launch foxglove_bridge foxglove_bridge_launch.xml; }
 discovery() { fastdds discovery -i 0 -l "${ROS_DISCOVERY_INTERFACE}" -p "${ROS_DISCOVERY_PORT}"; }
 
-export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-burger}"
+export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 
 if [[ -f "$HOME/turtlebot3_ws/install/setup.bash" ]]; then
   source "$HOME/turtlebot3_ws/install/setup.bash"

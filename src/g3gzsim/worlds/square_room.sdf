@@ -1,0 +1,120 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="square_room">
+
+    <!-- Plugins -->
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Sun -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Sun</uri>
+    </include>
+
+    <!-- Floor: 6m x 6m white -->
+    <model name="floor">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>6 6</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>6 6</size></plane></geometry>
+          <material>
+            <ambient>0.9 0.9 0.9 1</ambient>
+            <diffuse>0.9 0.9 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Wall thickness: 0.15m, height: 1.0m -->
+    <!-- Room interior: 6m x 6m, walls at +/-3m -->
+
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 3.075 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>6.15 0.15 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>6.15 0.15 1.0</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -3.075 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>6.15 0.15 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>6.15 0.15 1.0</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_east">
+      <static>true</static>
+      <pose>3.075 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 6.15 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 6.15 1.0</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-3.075 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 6.15 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 6.15 1.0</size></box></geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ArUco marker #42 on the east wall, centred at camera height -->
+    <!-- Flush against inner face of east wall (x = 3.0 - half thickness) -->
+    <!-- Marker normal points in -X (toward room centre) -->
+    <include>
+      <uri>model://aruco_marker_42</uri>
+      <pose>2.997 0 0.107 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+  </world>
+</sdf>
