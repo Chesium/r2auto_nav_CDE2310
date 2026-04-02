@@ -24,7 +24,7 @@ from geometry_msgs.msg import Twist
 
 
 # --------------- tunables ---------------
-MARKER_SIZE = 0.18        # marker square side (metres)
+MARKER_SIZE = 0.165       # marker square side (metres)
 DOCK_DIST = 0.50          # stop distance from marker (metres)
 STRAFE_DIST = 0.15        # lateral approach (metres)
 TARGET_MARKER = 42        # ArUco ID to track
