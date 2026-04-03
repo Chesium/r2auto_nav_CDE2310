@@ -91,18 +91,18 @@ class BallLauncherNode(Node):
         # Brief pause so mission controller has time to see 'complete' before we go idle
         time.sleep(0.1)
 
-        # Switch back to servo mode so we can command a specific position
-        self.uservo.set_motor_mode(SERVO_ID, MOTOR_MODE_SERVO)
-        time.sleep(0.1)  # small delay for mode switch to settle
+        # # Switch back to servo mode so we can command a specific position
+        # self.uservo.set_motor_mode(SERVO_ID, MOTOR_MODE_SERVO)
+        # time.sleep(0.1)  # small delay for mode switch to settle
 
-        # Read where the servo ended up and move it back to home position
-        current_pos = self.uservo.read_data_by_name(SERVO_ID, "CURRENT_POSITION")
-        self.get_logger().info(f'Post-fire position: {current_pos}, correcting to {HOME_POSITION}')
-        self.uservo.write_data_by_name(SERVO_ID, "TARGET_POSITION", HOME_POSITION)
+        # # Read where the servo ended up and move it back to home position
+        # current_pos = self.uservo.read_data_by_name(SERVO_ID, "CURRENT_POSITION")
+        # self.get_logger().info(f'Post-fire position: {current_pos}, correcting to {HOME_POSITION}')
+        # self.uservo.write_data_by_name(SERVO_ID, "TARGET_POSITION", HOME_POSITION)
 
-        # Switch back to DC mode ready for the next shot
-        time.sleep(0.5)  # give servo time to reach home before switching modes
-        self.uservo.set_motor_mode(SERVO_ID, MOTOR_MODE_DC)
+        # # Switch back to DC mode ready for the next shot
+        # time.sleep(0.5)  # give servo time to reach home before switching modes
+        # self.uservo.set_motor_mode(SERVO_ID, MOTOR_MODE_DC)
 
         with self._lock:
             self.status = 'idle'
