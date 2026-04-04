@@ -340,3 +340,50 @@ ros2 topic echo --once /local_costmap/costmap
 alias usb_cam='ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video1" -p pixel_format:="mjpeg2rgb" -p image_width:=640 -p image_height:=480 -p camera_name:="usb_cam" -p camera_info_url:="file:///root/.ros/camera_info/usb_cam.yaml" -r image_raw:=/camera/image_raw -r camera_info:=/camera/camera_info'
 
 ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video1" -p pixel_format:="mjpeg2rgb" -p image_width:=640 -p image_height:=480 -p camera_name:="usb_cam" -p camera_info_url:="file:///root/.ros/camera_info/usb_cam.yaml" -r image_raw:=/camera/image_raw -r camera_info:=/camera/camera_info
+
+## Setup After 5 April
+
+### In Laptop
+
+activate hot-spot
+
+open two tmux windows A and B:
+
+```bash
+bash ./scripts/ros2env_tmux.sh
+# then activate foxnode and discovery, respectively
+```
+
+and
+
+```bash
+bash ./scripts/g3nav2_tmux.sh
+```
+
+open foxglove app and connect to `ws://localhost:8765`
+
+### In turtlebot Raspberry Pi
+
+```bash
+chesiumx
+```
+
+Test connectivity
+
+```bash
+talker
+```
+
+Then activate the drivers:
+
+```bash
+rosbu
+```
+
+### Run navigation
+
+Activate the four commands in tmux B.
+note: run the nav 2 startup command (down-left) after the cartographer output stablize (up-left)
+
+after you can see the costmap layers in the RViz interface,
+send the "start exploration" command in tmux A (down-right)

@@ -62,4 +62,4 @@ send_cmd "$SESSION:bringup.1" "Pane B - RViz" "$CMD_B"
 send_cmd "$SESSION:bringup.2" "Pane C - Nav2" "$CMD_C"
 send_cmd "$SESSION:bringup.3" "Pane D - Exploration" "$CMD_D"
 
-tmux attach -t "$SESSION"`
+tmux attach -t "$SESSION"
