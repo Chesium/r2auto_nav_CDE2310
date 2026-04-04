@@ -12,9 +12,10 @@ SELF_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 WS="$SELF_DIR/.."
 SETUP_CMD="source $WS/install/setup.bash"
 
-CMD_A="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False"
-CMD_B="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True"
-CMD_C="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False"
+CMD_A="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False use_frontier:=False"
+CMD_B="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True use_frontier:=False"
+CMD_C="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False use_frontier:=False"
+CMD_D="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False  use_rviz:=False use_frontier:=True"
 # -----------------------------------
 
 # whether to auto-run commands:
@@ -33,13 +34,15 @@ tmux new-session -d -s "$SESSION" -n "bringup"
 
 # make 3 panes in the same window
 tmux split-window -h -t "$SESSION:bringup"
-tmux split-window -h -t "$SESSION:bringup"
-tmux select-layout -t "$SESSION:bringup" even-horizontal
+tmux split-window -v -t "$SESSION:bringup.0"
+tmux split-window -v -t "$SESSION:bringup.1"
+tmux select-layout -t "$SESSION:bringup" tiled
 
 # label each pane
-tmux select-pane -t "$SESSION:bringup.0" -T "A"
-tmux select-pane -t "$SESSION:bringup.1" -T "B"
-tmux select-pane -t "$SESSION:bringup.2" -T "C"
+tmux select-pane -t "$SESSION:bringup.0" -T "Cartographer"
+tmux select-pane -t "$SESSION:bringup.1" -T "RViz"
+tmux select-pane -t "$SESSION:bringup.2" -T "Nav2"
+tmux select-pane -t "$SESSION:bringup.3" -T "Exploration"
 
 send_cmd() {
   local target="$1"
@@ -54,8 +57,9 @@ send_cmd() {
   fi
 }
 
-send_cmd "$SESSION:bringup.0" "Pane A" "$CMD_A"
-send_cmd "$SESSION:bringup.1" "Pane B" "$CMD_B"
-send_cmd "$SESSION:bringup.2" "Pane C" "$CMD_C"
+send_cmd "$SESSION:bringup.0" "Pane A - Cartographer" "$CMD_A"
+send_cmd "$SESSION:bringup.1" "Pane B - RViz" "$CMD_B"
+send_cmd "$SESSION:bringup.2" "Pane C - Nav2" "$CMD_C"
+send_cmd "$SESSION:bringup.3" "Pane D - Exploration" "$CMD_D"
 
-tmux attach -t "$SESSION"
+tmux attach -t "$SESSION"`

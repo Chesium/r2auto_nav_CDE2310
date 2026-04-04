@@ -336,3 +336,7 @@ ros2 topic hz /scan
 ros2 topic echo --once /map
 ros2 topic echo --once /global_costmap/costmap
 ros2 topic echo --once /local_costmap/costmap
+
+alias usb_cam='ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video1" -p pixel_format:="mjpeg2rgb" -p image_width:=640 -p image_height:=480 -p camera_name:="usb_cam" -p camera_info_url:="file:///root/.ros/camera_info/usb_cam.yaml" -r image_raw:=/camera/image_raw -r camera_info:=/camera/camera_info'
+
+ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video1" -p pixel_format:="mjpeg2rgb" -p image_width:=640 -p image_height:=480 -p camera_name:="usb_cam" -p camera_info_url:="file:///root/.ros/camera_info/usb_cam.yaml" -r image_raw:=/camera/image_raw -r camera_info:=/camera/camera_info

@@ -80,23 +80,52 @@ def generate_launch_description():
         output="screen",
     )
 
+    # EXPLORATION STUFF
+    use_frontier = LaunchConfiguration("use_frontier")
+    declare_frontier = DeclareLaunchArgument(
+        "use_frontier", default_value="True", description="enable frontier nodes or not"
+    )
+    frontier_dir = get_package_share_directory("g3g_frontier_exploration")
+    frontier_launch_file = os.path.join(
+        frontier_dir, "launch", "frontier_exploration.launch.py"
+    )
+    default_frontier_params_file = os.path.join(
+        frontier_dir, "config", "frontier_exploration.yaml"
+    )
+    frontier_launch_action = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(frontier_launch_file),
+        condition=IfCondition(use_frontier),
+        launch_arguments={
+            "autostart": "False",
+            "params_file": default_frontier_params_file,
+        }.items(),
+    )
+
     ld = LaunchDescription()
 
     ld.add_action(declare_slam)
     ld.add_action(declare_nav2)
     ld.add_action(declare_rviz)
+    ld.add_action(declare_frontier)
 
     ld.add_action(tb3_cartographer_launch_action)
     ld.add_action(nav2_launch_action)
     ld.add_action(rviz2_action)
+    ld.add_action(frontier_launch_action)
 
     return ld
 
 # colcon build --symlink-install --packages-select g3nav2 && roset
-# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=False
+# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=False use_frontier:=False
 
-# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False
-# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True
-# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False
+# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False use_frontier:=False
+# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True  use_frontier:=False
+# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False use_frontier:=False
+# ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=False use_frontier:=True
 
 # ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 4}"
+
+# ./scripts/g3nav2_tmux.sh
+# tmux kill-session -t g3nav2
+
+# ros2 service call /exploration/set_enabled std_srvs/srv/SetBool "{data: true}"

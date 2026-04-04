@@ -8,6 +8,7 @@ Panels:
         - /TF1/Frames1
         - /TF1/Tree1
         - /LaserScan1
+        - /MarkerArray2
       Splitter Ratio: 0.5833333134651184
     Tree Height: 343
   - Class: rviz_common/Selection
@@ -137,9 +138,9 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 236
+      Max Intensity: 234
       Min Color: 0; 0; 0
-      Min Intensity: 68
+      Min Intensity: 152
       Name: LaserScan
       Position Transformer: XYZ
       Selectable: true
@@ -463,7 +464,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-      Enabled: true
+      Enabled: false
       Name: Controller
     - Class: rviz_common/Group
       Displays:
@@ -528,6 +529,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /waypoints
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /exploration/frontiers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -575,11 +588,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 76.76630401611328
+      Scale: 164.853515625
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
-      X: -0.6612336039543152
-      Y: 0.39609599113464355
+      X: 0.7317857146263123
+      Y: -0.4904215931892395
     Saved: ~
 Window Geometry:
   Displays:
