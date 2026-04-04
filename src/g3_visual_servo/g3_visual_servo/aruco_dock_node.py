@@ -174,10 +174,8 @@ class ArucoDockNode(Node):
                 self._phase_start_ns = self.get_clock().now().nanoseconds
                 self._state = State.DRIVE_TO_DOCK
             else:
-                cmd = Twist()
-                cmd.angular.z = float(
-                    -MAX_ANGULAR * np.sign(self._target_bearing))
-                self._cmd_vel_pub.publish(cmd)
+                self._send_cmd(angular_z=float(
+                    -MAX_ANGULAR * np.sign(self._target_bearing)))
 
         elif self._state == State.DRIVE_TO_DOCK:
             duration = self._target_dist / MAX_LINEAR
@@ -187,9 +185,7 @@ class ArucoDockNode(Node):
                 self._phase_start_ns = self.get_clock().now().nanoseconds
                 self._state = State.TURN_TO_MARKER
             else:
-                cmd = Twist()
-                cmd.linear.x = MAX_LINEAR
-                self._cmd_vel_pub.publish(cmd)
+                self._send_cmd(linear_x=MAX_LINEAR)
 
         elif self._state == State.TURN_TO_MARKER:
             duration = abs(self._target_final_turn) / MAX_ANGULAR
@@ -199,10 +195,8 @@ class ArucoDockNode(Node):
                 self._phase_start_ns = self.get_clock().now().nanoseconds
                 self._state = State.TURN_RIGHT
             else:
-                cmd = Twist()
-                cmd.angular.z = float(
-                    MAX_ANGULAR * np.sign(self._target_final_turn))
-                self._cmd_vel_pub.publish(cmd)
+                self._send_cmd(angular_z=float(
+                    MAX_ANGULAR * np.sign(self._target_final_turn)))
 
         elif self._state == State.TURN_RIGHT:
             if elapsed >= TURN_90_SECS:
@@ -211,9 +205,7 @@ class ArucoDockNode(Node):
                 self._phase_start_ns = self.get_clock().now().nanoseconds
                 self._state = State.STRAFE
             else:
-                cmd = Twist()
-                cmd.angular.z = -MAX_ANGULAR
-                self._cmd_vel_pub.publish(cmd)
+                self._send_cmd(angular_z=-MAX_ANGULAR)
 
         elif self._state == State.STRAFE:
             if elapsed >= STRAFE_SECS:
@@ -222,9 +214,7 @@ class ArucoDockNode(Node):
                 self._phase_start_ns = self.get_clock().now().nanoseconds
                 self._state = State.TURN_LEFT
             else:
-                cmd = Twist()
-                cmd.linear.x = MAX_LINEAR
-                self._cmd_vel_pub.publish(cmd)
+                self._send_cmd(linear_x=MAX_LINEAR)
 
         elif self._state == State.TURN_LEFT:
             if elapsed >= TURN_90_SECS:
@@ -232,9 +222,7 @@ class ArucoDockNode(Node):
                 self.get_logger().info('Docking complete.')
                 self._state = State.DONE
             else:
-                cmd = Twist()
-                cmd.angular.z = MAX_ANGULAR
-                self._cmd_vel_pub.publish(cmd)
+                self._send_cmd(angular_z=MAX_ANGULAR)
 
     # ------------------------------------------------------------------ #
     # Camera callbacks
@@ -384,8 +372,17 @@ class ArucoDockNode(Node):
     # Helpers
     # ------------------------------------------------------------------ #
 
+    def _send_cmd(self, linear_x: float = 0.0, angular_z: float = 0.0):
+        cmd = Twist()
+        cmd.linear.x = linear_x
+        cmd.angular.z = angular_z
+        self._cmd_vel_pub.publish(cmd)
+        if linear_x != 0.0 or angular_z != 0.0:
+            self.get_logger().info(
+                f'CMD_VEL: linear={linear_x:.3f} angular={angular_z:.3f}')
+
     def _stop(self):
-        self._cmd_vel_pub.publish(Twist())
+        self._send_cmd()
 
     def _publish_debug(self, frame: np.ndarray, stamp=None):
         msg = self._bridge.cv2_to_imgmsg(frame, encoding='bgr8')
