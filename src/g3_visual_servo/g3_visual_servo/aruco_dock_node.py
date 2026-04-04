@@ -82,6 +82,8 @@ class ArucoDockNode(Node):
         self._dist_coeffs = None
         self._state = State.SEARCHING
         self._process_next = False
+        self._last_process_ns = 0
+        self._min_process_interval_ns = int(0.2 * 1e9)  # 5 Hz max
 
         # LOCKING accumulators
         self._lock_bearings: list[float] = []
@@ -250,10 +252,21 @@ class ArucoDockNode(Node):
             return
         if self._state not in (State.SEARCHING, State.LOCKING):
             return
+        now_ns = self.get_clock().now().nanoseconds
         if self._state == State.SEARCHING and not self._process_next:
             return
+        if self._state == State.LOCKING:
+            if (now_ns - self._last_process_ns) < self._min_process_interval_ns:
+                return
         self._process_next = False
-        frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        self._last_process_ns = now_ns
+        try:
+            frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except Exception as e:
+            self.get_logger().error(f'cv_bridge failed: {e}')
+            return
+        self.get_logger().info(
+            f'Processing frame {frame.shape} in state {self._state.name}')
         self._process_frame(frame, stamp=msg.header.stamp)
 
     # ------------------------------------------------------------------ #
@@ -264,6 +277,8 @@ class ArucoDockNode(Node):
         detector_params = aruco.DetectorParameters_create()
         corners, ids, _ = aruco.detectMarkers(
             gray, ARUCO_DICT, parameters=detector_params)
+        self.get_logger().info(
+            f'detectMarkers: ids={ids.flatten().tolist() if ids is not None else None}')
         if ids is None:
             return None, None
         for i, mid in enumerate(ids.flatten()):
