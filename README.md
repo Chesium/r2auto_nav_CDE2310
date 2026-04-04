@@ -194,7 +194,7 @@ sudo bash -ic 'source /home/g3/.bashrc && source /home/g3/camera_ws/install/setu
 
 - run slam on your laptop **without RViz UI** (since we will open an another one when activating nav 2) by `slam use_rviz:=false`
   - assuming you have set `alias slam="ros2 launch turtlebot3_cartographer cartographer.launch.py"`
-- run the nav2 launch file: `ros2 launch turtlebot3_navigation2 navigation2.launch.py`
+- run the nav2 launch file: `ros2 launch turtlebot3_navigation2 navigation2.launch.py map:='""'`
   - after you see the costmap overlay (blue/purple/red stuff), do a round of `2D pose Estimate` (not sure if this is compulsory)
 
 ## Misc stuff
@@ -320,3 +320,19 @@ your_ws/
     └── your_custom_pkg1/
         └── ...
 ```
+
+ros2 lifecycle nodes
+ros2 lifecycle get /bt_navigator
+ros2 lifecycle get /planner_server
+ros2 lifecycle get /controller_server
+ros2 lifecycle get /behavior_server
+ros2 lifecycle get /smoother_server
+
+ros2 run tf2_ros tf2_echo map base_link
+ros2 run tf2_ros tf2_echo odom base_link
+ros2 topic echo --once /odom
+ros2 topic hz /scan
+
+ros2 topic echo --once /map
+ros2 topic echo --once /global_costmap/costmap
+ros2 topic echo --once /local_costmap/costmap
