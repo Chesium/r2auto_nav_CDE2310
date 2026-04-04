@@ -330,6 +330,8 @@ class ArucoDockNode(Node):
                     DOCK_DIST * R_mat[:, 2].flatten() + tvec.flatten())
                 dock_lat = float(dock_offset[0])
                 dock_z = float(dock_offset[2])
+                self.get_logger().info(
+                    f'PnP: tvec={tvec.flatten()} dock_offset={dock_offset} dock_z={dock_z:.3f}')
                 if dock_z > 0:
                     bearing = float(np.arctan2(dock_lat, dock_z))
                     dist = float(np.sqrt(dock_lat**2 + dock_z**2))
