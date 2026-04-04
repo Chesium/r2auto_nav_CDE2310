@@ -275,12 +275,12 @@ class ArucoDockNode(Node):
 
     def _detect_marker(self, gray: np.ndarray):
         detector_params = aruco.DetectorParameters_create()
-        corners, ids, _ = aruco.detectMarkers(
+        corners, ids, rejected = aruco.detectMarkers(
             gray, ARUCO_DICT, parameters=detector_params)
         self.get_logger().info(
             f'detectMarkers: ids={ids.flatten().tolist() if ids is not None else None}')
         if ids is None:
-            return None, None
+            return None, None, corners, ids, rejected
         for i, mid in enumerate(ids.flatten()):
             if mid != TARGET_MARKER:
                 continue
@@ -298,18 +298,45 @@ class ArucoDockNode(Node):
                 if R_tmp[2, 2] < 0:
                     rvec, tvec = r, t
                     break
-            return rvec, tvec
-        return None, None
+            return rvec, tvec, corners, ids, rejected
+        return None, None, corners, ids, rejected
 
     def _process_frame(self, frame: np.ndarray, stamp=None):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         debug = frame.copy()
 
-        rvec, tvec = self._detect_marker(gray)
+        rvec, tvec, corners, ids, rejected = self._detect_marker(gray)
+
+        # Draw all detected marker boundaries + IDs
+        if ids is not None:
+            aruco.drawDetectedMarkers(debug, corners, ids)
+        # Draw rejected candidates in red
+        if rejected:
+            for rej in rejected:
+                pts = rej[0].astype(int)
+                for j in range(4):
+                    cv2.line(debug, tuple(pts[j]), tuple(pts[(j+1) % 4]),
+                             (0, 0, 255), 1)
+
+        # Draw pose axes + overlay text if marker 42 found
         if rvec is not None:
             cv2.drawFrameAxes(
                 debug, self._camera_matrix, self._dist_coeffs,
                 rvec, tvec, MARKER_SIZE * 0.5)
+            t = tvec.flatten()
+            dist = float(np.sqrt(t[0]**2 + t[1]**2 + t[2]**2))
+            heading = _heading_from_rvec(rvec)
+            cv2.putText(debug,
+                f'dist={dist:.2f}m hdg={np.degrees(heading):+.1f}deg',
+                (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            cv2.putText(debug,
+                f'tvec=[{t[0]:.3f}, {t[1]:.3f}, {t[2]:.3f}]',
+                (5, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+
+        # State + timestamp overlay
+        cv2.putText(debug, f'State: {self._state.name}',
+            (5, debug.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX,
+            0.5, (255, 255, 255), 1)
 
         if self._state == State.SEARCHING:
             if rvec is None:
