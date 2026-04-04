@@ -83,7 +83,7 @@ class WarehouseMissionController(Node):
         self.is_aligned = False
         self.alignment_timeout = 10.0  # seconds
         self.alignment_start_time = None
-
+  
         # P-controller parameters for alignment
         self.declare_parameter("alignment_kp", 0.003)
         self.declare_parameter("max_angular_vel", 0.5)
@@ -97,8 +97,9 @@ class WarehouseMissionController(Node):
         self.balls_per_station = 3
 
         # ========== TIMING DELAYS ==========
-        self.declare_parameter("station_a_delay_after_ball_1", 7.0)
-        self.declare_parameter("station_a_delay_after_ball_2", 3.0)
+        # 2.3s to shoot ball
+        self.declare_parameter("station_a_delay_after_ball_1", 4.7)
+        self.declare_parameter("station_a_delay_after_ball_2", 0.7)
         self.declare_parameter("station_a_delay_after_ball_3", 0.0)
         self.declare_parameter("station_b_delay_after_ball_1", 0.0)
         self.declare_parameter("station_b_delay_after_ball_2", 0.0)
