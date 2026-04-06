@@ -15,6 +15,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import Bool, String, Int32
+from std_srvs.srv import Trigger
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
 import time
@@ -51,8 +52,10 @@ class WarehouseMissionController(Node):
 
     Publishes to:
         /cmd_vel (Twist) - Velocity commands for alignment
-        /fire_launcher (Bool) - Trigger launcher
         /mission_state (String) - Current state for monitoring
+
+    Service Clients:
+        /fire_launcher (Trigger) - Request one launcher shot
 
     Action Clients:
         /navigate_to_pose - Nav2 navigation action
@@ -93,6 +96,7 @@ class WarehouseMissionController(Node):
         # ========== LAUNCHER DATA ==========
         self.launcher_ready = True
         self.launcher_status = "idle"
+        self.launcher_request_pending = False
         self.balls_fired = 0
         self.balls_per_station = 3
 
@@ -141,8 +145,10 @@ class WarehouseMissionController(Node):
 
         # ========== PUBLISHERS ==========
         self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
-        self.fire_launcher_pub = self.create_publisher(Bool, "/fire_launcher", 10)
         self.state_pub = self.create_publisher(String, "/mission_state", 10)
+
+        # ========== SERVICE CLIENTS ==========
+        self.fire_launcher_client = self.create_client(Trigger, "/fire_launcher")
 
         # ========== ACTION CLIENTS ==========
         self.nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
@@ -240,6 +246,11 @@ class WarehouseMissionController(Node):
                     self.get_logger().info(
                         f"Ball {self.balls_fired} fired. No delay required."
                     )
+        elif self.launcher_status == "error":
+            self.launcher_ready = True
+            self.get_logger().warn("Launcher reported error state; will retry when ready.")
+        elif self.launcher_status == "idle" and not self.launcher_request_pending:
+            self.launcher_ready = True
 
     def exploration_callback(self, msg):
         """Receive exploration completion status"""
@@ -599,16 +610,53 @@ class WarehouseMissionController(Node):
         return True
 
     def is_launcher_ready_to_fire(self):
-        return self.launcher_ready and self.launcher_status == "idle"
+        return (
+            self.launcher_ready
+            and not self.launcher_request_pending
+            and self.launcher_status == "idle"
+        )
 
     def fire_next_ball(self, station_id):
+        if self.launcher_request_pending:
+            return
+
+        if not self.fire_launcher_client.wait_for_service(timeout_sec=0.0):
+            self.get_logger().warn("Launcher fire service is not available yet.")
+            return
+
         self.get_logger().info(
             f"Firing ball {self.balls_fired + 1}/{self.balls_per_station} at Station {station_id}"
         )
-        fire_msg = Bool()
-        fire_msg.data = True
-        self.fire_launcher_pub.publish(fire_msg)
+        self.launcher_request_pending = True
+        request = Trigger.Request()
+        future = self.fire_launcher_client.call_async(request)
+        future.add_done_callback(
+            lambda done_future, station_id=station_id: self.fire_launcher_response_callback(
+                done_future, station_id
+            )
+        )
+
+    def fire_launcher_response_callback(self, future, station_id):
+        self.launcher_request_pending = False
+
+        try:
+            response = future.result()
+        except Exception as exc:
+            self.get_logger().error(
+                f"Launcher fire request failed at Station {station_id}: {exc}"
+            )
+            return
+
+        if not response.success:
+            self.get_logger().warn(
+                f"Launcher rejected fire request at Station {station_id}: {response.message}"
+            )
+            return
+
         self.launcher_ready = False
+        self.get_logger().info(
+            f"Launcher accepted fire request at Station {station_id}: {response.message}"
+        )
 
     def get_delay_for_ball(self, station_id, ball_index):
         station_delays = (

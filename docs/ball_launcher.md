@@ -1,6 +1,6 @@
 # g3_ball_launcher
 
-ROS 2 driver node that receives fire commands from the mission controller and drives a UART bus servo in DC motor mode to launch balls.
+ROS 2 driver node that receives fire requests from the mission controller and drives a UART bus servo in DC motor mode to launch balls.
 
 ## Package Structure
 
@@ -19,11 +19,17 @@ g3_ball_launcher/
 
 ## Node: `ball_launcher_node`
 
+### Services
+
+| Service | Type | Description |
+|---|---|---|
+| `/fire_launcher` | `std_srvs/srv/Trigger` | Request one launcher shot |
+| `/stop_launcher` | `std_srvs/srv/Trigger` | Stop the motor immediately |
+
 ### Topics
 
 | Topic | Type | Direction | Description |
 |---|---|---|---|
-| `/fire_launcher` | `std_msgs/Bool` | Subscribes | Receive `True` from mission controller to trigger one shot |
 | `/launcher_status` | `std_msgs/String` | Publishes | Reports current launcher state at 10 Hz |
 
 ### Launcher Status Values
@@ -33,6 +39,7 @@ g3_ball_launcher/
 | `idle` | Ready to accept a fire command |
 | `firing` | Motor spinning, ball being launched |
 | `complete` | Shot done, notifying mission controller |
+| `error` | Serial link unavailable or command failed |
 
 ### Hardware Config
 
@@ -48,9 +55,9 @@ Defined as constants at the top of `ball_launcher_node.py`:
 ## Fire Sequence
 
 ```
-Mission controller publishes True → /fire_launcher
+Mission controller calls /fire_launcher
     ↓
-fire_cb() triggered
+fire service callback accepts request
     ↓
 status = 'firing'  (blocks further fire commands)
     ↓
@@ -69,6 +76,7 @@ status = 'idle'  (ready for next ball)
 ## Dependencies
 
 - `rclpy`, `std_msgs` — ROS 2
+- `std_srvs` — fire/stop service interfaces
 - `python3-serial` (`pyserial`) — UART serial communication
 
 ### Installing pyserial
@@ -107,7 +115,10 @@ ros2 run g3_ball_launcher ball_launcher_node
 ros2 topic echo /launcher_status
 
 # Terminal 3 — trigger a shot
-ros2 topic pub --once /fire_launcher std_msgs/msg/Bool "{data: true}"
+ros2 service call /fire_launcher std_srvs/srv/Trigger "{}"
+
+# Terminal 4 — stop the launcher
+ros2 service call /stop_launcher std_srvs/srv/Trigger "{}"
 ```
 
 Expected output on `/launcher_status`: `idle` → `firing` → `complete` → `idle`
@@ -119,7 +130,7 @@ The mission controller (`g3_mission_control`) checks both conditions before firi
 launcher_ready == True AND launcher_status == 'idle'
 ```
 
-- `launcher_ready` is set `False` when a fire command is sent, and `True` when `complete` is received
+- `launcher_ready` is set `False` when a fire request is accepted, and `True` when `complete` is received
 - The node **must** return to `idle` after `complete` or the mission controller will not fire the next ball
 
 Inter-ball delays (e.g. 7s after ball 1 at Station A) are handled entirely by the mission controller — this node does not need to implement them.

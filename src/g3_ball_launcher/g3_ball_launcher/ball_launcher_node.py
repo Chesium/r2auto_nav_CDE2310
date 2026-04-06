@@ -5,11 +5,12 @@ import time
 import serial
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool, String
+from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
 # Import the UART servo SDK (bundled inside this package under uart_sdk/)
 from .uart_sdk.uart_servo import UartServoManager
-from .uart_sdk.data_table import MOTOR_MODE_DC, MOTOR_MODE_SERVO, DC_DIR_CW
+from .uart_sdk.data_table import MOTOR_MODE_DC, DC_DIR_CW
 
 # --- Hardware config ---
 SERVO_PORT = '/dev/ttyUSB0'  # USB serial port the servo is connected to
@@ -48,8 +49,8 @@ class BallLauncherNode(Node):
         # --- ROS interfaces ---
         # Publishes 'idle'/'firing'/'complete' so mission controller knows launcher state
         self.status_pub = self.create_publisher(String, '/launcher_status', 10)
-        # Receives True from mission controller to trigger one ball
-        self.create_subscription(Bool, '/fire_launcher', self.fire_cb, 10)
+        self.create_service(Trigger, '/fire_launcher', self.handle_fire_request)
+        self.create_service(Trigger, '/stop_launcher', self.handle_stop_request)
         # Broadcast status at 10 Hz so mission controller always has a fresh reading
         self.create_timer(0.1, self.publish_status)
         # Retry serial connection in the background so a replugged device can recover
@@ -90,22 +91,6 @@ class BallLauncherNode(Node):
             time.sleep(0.02)
             self.uservo.dc_stop(self.servo_id)
         return True
-
-    def _manual_stop_thread(self):
-        if self.uservo is None and not self._connect_servo():
-            return
-
-        try:
-            if self._stop_motor('Manual stop requested for launcher motor'):
-                with self._lock:
-                    self.status = 'idle'
-                self.publish_status()
-        except serial.SerialException as exc:
-            self._handle_serial_failure(exc, 'Launcher serial communication failed during manual stop')
-            return
-
-        self._stop_requested.clear()
-        self.get_logger().info('Launcher manual stop completed.')
 
     def _connect_servo(self):
         if self.uservo is not None:
@@ -152,32 +137,55 @@ class BallLauncherNode(Node):
         msg.data = self.status
         self.status_pub.publish(msg)
 
-    def fire_cb(self, msg: Bool):
-        if not msg.data:
-            with self._lock:
-                is_firing = self.status == 'firing'
-            self._stop_requested.set()
-            if is_firing:
-                self.get_logger().warning('Received manual stop request for launcher.')
-            else:
-                self.get_logger().info('Received stop request while launcher was not firing.')
-            threading.Thread(target=self._manual_stop_thread, daemon=True).start()
-            return
+    def _request_fire(self):
+        if self.uservo is None and not self._connect_servo():
+            return False, 'Launcher serial link is unavailable.'
 
-        # Only accept a fire command if we're idle — prevents double-firing
         with self._lock:
             if self.status != 'idle':
-                if self.status == 'error':
-                    self.get_logger().warning('Ignoring fire command because launcher serial link is unavailable.')
-                return
+                return False, f'Launcher is {self.status}.'
             self._stop_requested.clear()
             self.status = 'firing'  # claim the launcher before releasing the lock
 
         self.get_logger().info('Firing ball...')
-
         # Run the motor in a background thread so we don't block ROS callbacks
         # (time.sleep inside a callback would freeze the whole node)
         threading.Thread(target=self._fire_thread, daemon=True).start()
+        return True, 'Fire request accepted.'
+
+    def _request_stop(self):
+        self._stop_requested.set()
+
+        with self._lock:
+            is_firing = self.status == 'firing'
+
+        if self.uservo is None and not self._connect_servo():
+            return False, 'Launcher serial link is unavailable.'
+
+        try:
+            if self._stop_motor('Manual stop requested for launcher motor'):
+                with self._lock:
+                    self.status = 'idle'
+                self.publish_status()
+        except serial.SerialException as exc:
+            self._handle_serial_failure(exc, 'Launcher serial communication failed during manual stop')
+            return False, 'Launcher stop failed due to serial error.'
+
+        if not is_firing:
+            self._stop_requested.clear()
+            self.get_logger().info('Launcher was already idle; stop command sent anyway.')
+            return True, 'Launcher was already stopped.'
+
+        self.get_logger().info('Launcher stop requested during active firing.')
+        return True, 'Launcher stop requested.'
+
+    def handle_fire_request(self, _request, response):
+        response.success, response.message = self._request_fire()
+        return response
+
+    def handle_stop_request(self, _request, response):
+        response.success, response.message = self._request_stop()
+        return response
 
     def _fire_thread(self):
         if self.uservo is None and not self._connect_servo():
