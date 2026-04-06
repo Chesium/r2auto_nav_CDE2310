@@ -334,3 +334,102 @@ your_ws/
     └── your_custom_pkg1/
         └── ...
 ```
+
+
+# ArUco Visual Servo Docking
+
+Autonomous docking onto a 4×4 ArUco marker (ID 42, 16.5 cm) using the USB camera.
+Runs entirely on the laptop — no Nav2 required.
+
+## Prerequisites
+
+- ROS 2 connection to robot established (see *Update/Connect to Hot-spot* above)
+- `rosbu` running on the RPi (robot bringup — publishes `/cmd_vel`, `/odom`, etc.)
+
+## 1. Build on the laptop
+
+```bash
+cd ~/nav_ws
+colcon build --symlink-install --packages-select g3_visual_servo
+source install/setup.bash
+```
+
+## 2. Start the USB camera
+
+Run on the **laptop** (camera plugged into laptop USB):
+
+```bash
+ros2 run usb_cam usb_cam_node_exe --ros-args \
+  -p video_device:="/dev/video1" \
+  -p pixel_format:="mjpeg2rgb" \
+  -p image_width:=640 \
+  -p image_height:=480 \
+  -p camera_name:="usb_cam" \
+  -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
+  -r image_raw:=/usb_cam/image_raw \
+  -r camera_info:=/usb_cam/camera_info
+```
+
+> If you see `unable to open camera calibration file`, that is fine — the node will still publish images; pose estimation just uses a fallback.
+
+Verify the camera is streaming:
+
+```bash
+ros2 topic hz /usb_cam/image_raw
+```
+
+## 3. (Optional) Smoke-test cmd_vel
+
+Before running the full docking node, verify the robot will actually move:
+
+```bash
+ros2 run g3_visual_servo cmd_vel_test
+```
+
+The robot should drive forward ~0.3 m then stop. If it does not move, check that `rosbu` is running on the RPi and the ROS 2 discovery server is configured correctly.
+
+## 4. Run the docking node
+
+```bash
+ros2 run g3_visual_servo aruco_dock
+```
+
+State machine: `SEARCHING → LOCKING → TURN_TO_DOCK → DRIVE_TO_DOCK → DONE`
+
+The node prints its current state and cmd_vel values to the terminal. It stops automatically when docking is complete.
+
+## 5. (Optional) Visualise with Foxglove
+
+```bash
+foxnode   # alias for: ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+```
+
+Open Foxglove → connect `ws://localhost:8765` → add an **Image** panel on `/aruco_debug/image_raw` to see the detected marker and overlay.
+
+## Tunable constants ([aruco_dock_node.py](src/g3_visual_servo/g3_visual_servo/aruco_dock_node.py))
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `TARGET_MARKER` | `42` | ArUco ID to track |
+| `MARKER_SIZE` | `0.165` m | Physical marker side length |
+| `DOCK_DIST` | `0.50` m | Stop distance from marker |
+| `MAX_LINEAR` | `0.12` m/s | Maximum forward speed |
+| `MAX_ANGULAR` | `0.5` rad/s | Maximum turn speed |
+| `LOCK_N` | `8` | Pose samples before committing |
+
+---
+
+# Camera USB
+
+Turn it on using (no need to go into ssh mode)
+
+ros2 run usb_cam usb_cam_node_exe --ros-args \
+  -p video_device:="/dev/video1" \
+  -p pixel_format:="mjpeg2rgb" \
+  -p image_width:=640 \
+  -p image_height:=480 \
+  -p camera_name:="usb_cam" \
+  -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
+  -r image_raw:=/usb_cam/image_raw \
+  -r camera_info:=/usb_cam/camera_info
+  
