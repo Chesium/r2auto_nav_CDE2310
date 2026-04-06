@@ -38,7 +38,9 @@ class BallLauncherNode(Node):
         )
         # UartServoManager wraps the serial port and handles packet framing
         self.uservo = UartServoManager(uart, servo_id_list=[SERVO_ID])
-        # Switch servo from position (servo) mode to DC motor mode so we can spin it freely
+        # Must set servo mode first before switching to DC mode
+        self.uservo.set_motor_mode(SERVO_ID, MOTOR_MODE_SERVO)
+        time.sleep(0.1)
         self.uservo.set_motor_mode(SERVO_ID, MOTOR_MODE_DC)
 
         # --- ROS interfaces ---
