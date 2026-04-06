@@ -6,8 +6,20 @@ Ported from Arnav-Jhajharia/cde2310_sim_ws (tb3_cv) and adapted for:
   - Gazebo Harmonic (ogre2 rendering)
 
 State machine:
-  SEARCHING → LOCKING → TURN_TO_DOCK → DRIVE_TO_DOCK → TURN_TO_MARKER → DONE
-  (TURN_RIGHT → STRAFE → TURN_LEFT commented out — re-enable for off-centre camera)
+  SEARCHING → LOCKING → APPROACH (closed-loop PnP feedback) → ALIGN → VERIFY → DONE
+
+Changes from original:
+  [FIX-1] Open-loop nav replaced with closed-loop PnP feedback in APPROACH + ALIGN states.
+  [FIX-2] IPPE_SQUARE solution selection uses tvec[2] > 0 (marker in front of camera),
+          not the incorrect R[2,2] < 0 rotation check.
+  [FIX-3] Removed unjustified * 1.5 heading multiplier. Heading derived analytically.
+  [FIX-4] DetectorParameters allocated once in __init__, not per frame.
+  [FIX-5] _commit_lock() is idempotent — guarded by a flag to prevent double-commit
+          if executor is ever switched to MultiThreadedExecutor.
+  [FIX-6] VERIFY state: performs one final PnP check before declaring DONE.
+          Resets to SEARCHING if dock tolerance not met.
+  [FIX-7] LOCKING bimodal guard: samples whose bearing deviates > 10 deg from
+          running median are rejected.
 """
 
 import rclpy
@@ -24,18 +36,25 @@ from geometry_msgs.msg import Twist, TwistStamped
 
 
 # --------------- tunables ---------------
-MARKER_SIZE = 0.165       # marker square side (metres)
-DOCK_DIST = 0.30          # stop distance from marker (metres)
-# STRAFE_DIST = 0.15      # lateral strafe (m) — re-enable if camera is off-centre
-TARGET_MARKER = 42        # ArUco ID to track
-MAX_LINEAR = 0.12         # m/s
-MAX_ANGULAR = 0.5         # rad/s
-LOCK_N = 8                # pose samples before committing
+MARKER_SIZE   = 0.165   # marker square side (metres)
+DOCK_DIST     = 0.30    # desired stop distance from marker (metres)
+TARGET_MARKER = 42      # ArUco ID to track
+MAX_LINEAR    = 0.10    # m/s  (conservative for closed-loop)
+MAX_ANGULAR   = 0.40    # rad/s
+
+LOCK_N              = 8      # pose samples before committing
+BEARING_OUTLIER_DEG = 10.0   # [FIX-7] reject samples this far from running median
+
+# Closed-loop approach tolerances
+APPROACH_DIST_TOL   = 0.04   # metres  — within this → start ALIGN
+ALIGN_ANGLE_TOL_DEG = 3.0    # degrees — within this → VERIFY
+VERIFY_DIST_TOL     = 0.06   # metres  — final check tolerance
+
+# Proportional gains for closed-loop control
+KP_LINEAR  = 0.6   # (dist_error) → linear.x
+KP_ANGULAR = 1.2   # (angle_error_rad) → angular.z
 
 ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
-
-# TURN_90_SECS = (np.pi / 2) / MAX_ANGULAR   # used by pseudo-strafe
-# STRAFE_SECS = STRAFE_DIST / MAX_LINEAR      # used by pseudo-strafe
 
 MARKER_OBJECT_POINTS = np.array([
     [-MARKER_SIZE / 2,  MARKER_SIZE / 2, 0],
@@ -44,32 +63,38 @@ MARKER_OBJECT_POINTS = np.array([
     [-MARKER_SIZE / 2, -MARKER_SIZE / 2, 0],
 ], dtype=np.float32)
 
-# --------------- camera topics ---------------
-# Adapt these if your camera publishes on different topics.
 CAMERA_IMAGE_TOPIC = '/usb_cam/image_raw'
-CAMERA_INFO_TOPIC = '/usb_cam/camera_info'
+CAMERA_INFO_TOPIC  = '/usb_cam/camera_info'
+
+# How many consecutive frames we can lose the marker before aborting
+MAX_LOST_FRAMES = 15
 
 
 class State(Enum):
     SEARCHING = auto()
-    LOCKING = auto()
-    TURN_TO_DOCK = auto()
-    DRIVE_TO_DOCK = auto()
-    TURN_TO_MARKER = auto()
-    # TURN_RIGHT = auto()  # pseudo-strafe for off-centre camera — disabled (camera is centred)
-    # STRAFE = auto()
-    # TURN_LEFT = auto()
-    DONE = auto()
+    LOCKING   = auto()
+    APPROACH  = auto()   # closed-loop: drive toward dock point
+    ALIGN     = auto()   # closed-loop: rotate to face marker squarely
+    VERIFY    = auto()   # one-shot PnP sanity check
+    DONE      = auto()
+    FAILED    = auto()
 
 
 def _heading_from_rvec(rvec: np.ndarray) -> float:
-    """Yaw error: 0 when robot faces marker squarely.
+    """Yaw error in radians: 0 when robot faces marker squarely.
 
+    Derived from the marker's rotation matrix column that represents
+    the marker normal (Z-axis) projected into the camera XZ plane.
     Positive → turn CCW (positive angular.z) to square up.
-    Scale 1.5 compensates for PnP underestimation at shallow angles.
+
+    [FIX-3] Removed unjustified * 1.5 scale factor.
+    The correct formulation: the angle between the marker's Z-axis
+    projection onto the camera XZ-plane and the camera's own Z-axis.
     """
     R, _ = cv2.Rodrigues(rvec)
-    return float(np.arctan2(R[0, 2], -R[2, 2])) * 1.5
+    # R[:,2] is the marker Z-axis in camera frame.
+    # Project onto XZ plane and compute signed angle.
+    return float(np.arctan2(R[0, 2], R[2, 2]))
 
 
 class ArucoDockNode(Node):
@@ -77,25 +102,28 @@ class ArucoDockNode(Node):
     def __init__(self):
         super().__init__('aruco_dock')
 
-        self._bridge = CvBridge()
-        self._camera_matrix = None
-        self._dist_coeffs = None
-        self._state = State.SEARCHING
-        self._process_next = False
+        self._bridge         = CvBridge()
+        self._camera_matrix  = None
+        self._dist_coeffs    = None
+        self._state          = State.SEARCHING
+        self._process_next   = False
         self._last_process_ns = 0
-        self._min_process_interval_ns = int(0.2 * 1e9)  # 5 Hz max
+        self._min_process_interval_ns = int(0.1 * 1e9)  # 10 Hz max
+
+        # [FIX-4] Allocate detector parameters once, not per frame.
+        self._detector_params = aruco.DetectorParameters()
 
         # LOCKING accumulators
         self._lock_bearings: list[float] = []
-        self._lock_dists: list[float] = []
+        self._lock_dists:    list[float] = []
         self._lock_headings: list[float] = []
         self._lock_ticks = 0
 
-        # Navigation plan (set at commit_lock)
-        self._target_bearing = 0.0
-        self._target_dist = 0.0
-        self._target_final_turn = 0.0
-        self._phase_start_ns = 0
+        # [FIX-5] Guard against double-commit
+        self._lock_committed = False
+
+        # Closed-loop state
+        self._lost_frames = 0
 
         # Subscriptions
         self.create_subscription(
@@ -104,26 +132,26 @@ class ArucoDockNode(Node):
             Image, CAMERA_IMAGE_TOPIC, self._image_cb, 10)
 
         # Publishers
-        self._debug_pub = self.create_publisher(
+        self._debug_pub   = self.create_publisher(
             Image, '/aruco_debug/image_raw', 10)
         self._cmd_vel_pub = self.create_publisher(
             TwistStamped, '/cmd_vel', 10)
 
-        # Timers
+        # 1 Hz management tick (SEARCHING pulse + LOCKING timeout)
         self.create_timer(1.0, self._tick)
-        self.create_timer(0.05, self._open_loop_tick)
 
         self.get_logger().info(
             f'ArUco dock node started — looking for marker {TARGET_MARKER} '
             f'on {CAMERA_IMAGE_TOPIC}')
 
     # ------------------------------------------------------------------ #
-    # 1 Hz tick — controls SEARCHING and LOCKING timeout
+    # 1 Hz management tick
     # ------------------------------------------------------------------ #
 
     def _tick(self):
         if self._state == State.SEARCHING:
             self._process_next = True
+
         elif self._state == State.LOCKING:
             self._lock_ticks += 1
             if self._lock_ticks >= 5 and len(self._lock_bearings) > 0:
@@ -133,100 +161,32 @@ class ArucoDockNode(Node):
                 self._commit_lock()
 
     def _reset(self):
-        self._state = State.SEARCHING
-        self._lock_bearings = []
-        self._lock_dists = []
-        self._lock_headings = []
-        self._lock_ticks = 0
+        self._state           = State.SEARCHING
+        self._lock_bearings   = []
+        self._lock_dists      = []
+        self._lock_headings   = []
+        self._lock_ticks      = 0
+        self._lock_committed  = False
+        self._lost_frames     = 0
 
     def _commit_lock(self):
-        """Compute navigation plan from accumulated pose samples."""
-        bearing = float(np.median(self._lock_bearings))
-        dist = float(np.median(self._lock_dists))
-        heading = float(np.median(self._lock_headings))
-        final_turn = heading + bearing
+        """Transition to closed-loop APPROACH using median of accumulated samples."""
+        # [FIX-5] Idempotent — ignore if already committed this lock cycle.
+        if self._lock_committed:
+            return
+        self._lock_committed = True
 
-        self._target_bearing = bearing
-        self._target_dist = dist
-        self._target_final_turn = final_turn
+        bearing = float(np.median(self._lock_bearings))
+        dist    = float(np.median(self._lock_dists))
+        heading = float(np.median(self._lock_headings))
 
         self.get_logger().info(
-            f'Plan: turn {np.degrees(bearing):+.1f}deg -> '
-            f'drive {dist:.3f}m -> '
-            f'turn {np.degrees(final_turn):+.1f}deg to face marker')
+            f'Lock committed: bearing={np.degrees(bearing):+.1f}deg  '
+            f'dist={dist:.3f}m  heading={np.degrees(heading):+.1f}deg  '
+            f'→ switching to closed-loop APPROACH')
 
-        self._phase_start_ns = self.get_clock().now().nanoseconds
-        self._state = State.TURN_TO_DOCK
-
-    # ------------------------------------------------------------------ #
-    # 50 Hz tick — open-loop velocity commands
-    # ------------------------------------------------------------------ #
-
-    def _open_loop_tick(self):
-        now_ns = self.get_clock().now().nanoseconds
-        elapsed = (now_ns - self._phase_start_ns) / 1e9
-
-        if self._state == State.TURN_TO_DOCK:
-            duration = abs(self._target_bearing) / MAX_ANGULAR
-            if elapsed >= duration:
-                self._stop()
-                self.get_logger().info('Turn to dock done — driving.')
-                self._phase_start_ns = self.get_clock().now().nanoseconds
-                self._state = State.DRIVE_TO_DOCK
-            else:
-                self._send_cmd(angular_z=float(
-                    -MAX_ANGULAR * np.sign(self._target_bearing)))
-
-        elif self._state == State.DRIVE_TO_DOCK:
-            duration = self._target_dist / MAX_LINEAR
-            if elapsed >= duration:
-                self._stop()
-                self.get_logger().info('At dock — turning to face marker.')
-                self._phase_start_ns = self.get_clock().now().nanoseconds
-                self._state = State.TURN_TO_MARKER
-            else:
-                self._send_cmd(linear_x=MAX_LINEAR)
-
-        elif self._state == State.TURN_TO_MARKER:
-            duration = abs(self._target_final_turn) / MAX_ANGULAR
-            if elapsed >= duration:
-                self._stop()
-                self.get_logger().info('Docking complete.')
-                self._state = State.DONE
-            else:
-                self._send_cmd(angular_z=float(
-                    MAX_ANGULAR * np.sign(self._target_final_turn)))
-
-        # --- pseudo-strafe disabled: camera is centred on robot ---
-        # Re-enable these blocks (and TURN_RIGHT/STRAFE/TURN_LEFT in State enum
-        # and STRAFE_DIST/TURN_90_SECS/STRAFE_SECS constants) if the camera is
-        # mounted off-centre and a lateral correction is needed.
-        #
-        # elif self._state == State.TURN_RIGHT:
-        #     if elapsed >= TURN_90_SECS:
-        #         self._stop()
-        #         self.get_logger().info('Turn right done — strafing.')
-        #         self._phase_start_ns = self.get_clock().now().nanoseconds
-        #         self._state = State.STRAFE
-        #     else:
-        #         self._send_cmd(angular_z=-MAX_ANGULAR)
-        #
-        # elif self._state == State.STRAFE:
-        #     if elapsed >= STRAFE_SECS:
-        #         self._stop()
-        #         self.get_logger().info('Strafe done — turning left.')
-        #         self._phase_start_ns = self.get_clock().now().nanoseconds
-        #         self._state = State.TURN_LEFT
-        #     else:
-        #         self._send_cmd(linear_x=MAX_LINEAR)
-        #
-        # elif self._state == State.TURN_LEFT:
-        #     if elapsed >= TURN_90_SECS:
-        #         self._stop()
-        #         self.get_logger().info('Docking complete.')
-        #         self._state = State.DONE
-        #     else:
-        #         self._send_cmd(angular_z=MAX_ANGULAR)
+        self._lost_frames = 0
+        self._state = State.APPROACH
 
     # ------------------------------------------------------------------ #
     # Camera callbacks
@@ -242,23 +202,28 @@ class ArucoDockNode(Node):
     def _image_cb(self, msg: Image):
         if self._camera_matrix is None:
             return
-        if self._state not in (State.SEARCHING, State.LOCKING):
+        if self._state not in (
+                State.SEARCHING, State.LOCKING,
+                State.APPROACH,  State.ALIGN, State.VERIFY):
             return
+
         now_ns = self.get_clock().now().nanoseconds
+
+        # Rate-limit processing
         if self._state == State.SEARCHING and not self._process_next:
             return
-        if self._state == State.LOCKING:
-            if (now_ns - self._last_process_ns) < self._min_process_interval_ns:
-                return
-        self._process_next = False
+        if (now_ns - self._last_process_ns) < self._min_process_interval_ns:
+            return
+
+        self._process_next    = False
         self._last_process_ns = now_ns
+
         try:
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
             self.get_logger().error(f'cv_bridge failed: {e}')
             return
-        self.get_logger().info(
-            f'Processing frame {frame.shape} in state {self._state.name}')
+
         self._process_frame(frame, stamp=msg.header.stamp)
 
     # ------------------------------------------------------------------ #
@@ -266,43 +231,54 @@ class ArucoDockNode(Node):
     # ------------------------------------------------------------------ #
 
     def _detect_marker(self, gray: np.ndarray):
-        detector_params = aruco.DetectorParameters_create()
+        """Detect TARGET_MARKER and return (rvec, tvec) or (None, None).
+
+        [FIX-2] Solution selection: pick the IPPE_SQUARE solution where
+        tvec[2] > 0 (marker is in front of the camera). The original
+        R[2,2] < 0 check was incorrect and could silently fall back to
+        the wrong solution.
+        """
         corners, ids, rejected = aruco.detectMarkers(
-            gray, ARUCO_DICT, parameters=detector_params)
+            gray, ARUCO_DICT, parameters=self._detector_params)
+
         self.get_logger().info(
             f'detectMarkers: ids={ids.flatten().tolist() if ids is not None else None}')
+
         if ids is None:
             return None, None, corners, ids, rejected
+
         for i, mid in enumerate(ids.flatten()):
             if mid != TARGET_MARKER:
                 continue
+
             image_points = corners[i][0].astype(np.float32)
             retval, rvecs, tvecs, _ = cv2.solvePnPGeneric(
                 MARKER_OBJECT_POINTS, image_points,
                 self._camera_matrix, self._dist_coeffs,
                 flags=cv2.SOLVEPNP_IPPE_SQUARE,
             )
-            if not retval:
+            if not retval or len(rvecs) == 0:
                 continue
-            rvec, tvec = rvecs[0], tvecs[0]
+
+            # [FIX-2] Select solution with marker in front of camera (tvec Z > 0).
+            rvec, tvec = rvecs[0], tvecs[0]  # fallback to first
             for r, t in zip(rvecs, tvecs):
-                R_tmp, _ = cv2.Rodrigues(r)
-                if R_tmp[2, 2] < 0:
+                if t[2, 0] > 0:
                     rvec, tvec = r, t
                     break
+
             return rvec, tvec, corners, ids, rejected
+
         return None, None, corners, ids, rejected
 
     def _process_frame(self, frame: np.ndarray, stamp=None):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         debug = frame.copy()
 
         rvec, tvec, corners, ids, rejected = self._detect_marker(gray)
 
-        # Draw all detected marker boundaries + IDs
         if ids is not None:
             aruco.drawDetectedMarkers(debug, corners, ids)
-        # Draw rejected candidates in red
         if rejected:
             for rej in rejected:
                 pts = rej[0].astype(int)
@@ -310,65 +286,174 @@ class ArucoDockNode(Node):
                     cv2.line(debug, tuple(pts[j]), tuple(pts[(j+1) % 4]),
                              (0, 0, 255), 1)
 
-        # Draw pose axes + overlay text if marker 42 found
         if rvec is not None:
             cv2.drawFrameAxes(
                 debug, self._camera_matrix, self._dist_coeffs,
                 rvec, tvec, MARKER_SIZE * 0.5)
-            t = tvec.flatten()
-            dist = float(np.sqrt(t[0]**2 + t[1]**2 + t[2]**2))
+            t       = tvec.flatten()
+            dist    = float(np.linalg.norm(t))
             heading = _heading_from_rvec(rvec)
+            lateral = t[0]
             cv2.putText(debug,
-                f'dist={dist:.2f}m hdg={np.degrees(heading):+.1f}deg',
+                f'dist={dist:.2f}m hdg={np.degrees(heading):+.1f}deg lat={lateral:+.3f}m',
                 (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            cv2.putText(debug,
-                f'tvec=[{t[0]:.3f}, {t[1]:.3f}, {t[2]:.3f}]',
-                (5, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
 
-        # State + timestamp overlay
         cv2.putText(debug, f'State: {self._state.name}',
             (5, debug.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX,
             0.5, (255, 255, 255), 1)
 
+        # ---- SEARCHING ----
         if self._state == State.SEARCHING:
             if rvec is None:
                 self.get_logger().info('No marker detected.')
                 self._publish_debug(debug, stamp)
                 return
-            self.get_logger().info('Marker found — locking estimate.')
-            self._lock_bearings = []
-            self._lock_dists = []
-            self._lock_headings = []
-            self._lock_ticks = 0
-            self._state = State.LOCKING
+            self.get_logger().info('Marker found — beginning LOCKING.')
+            self._lock_bearings  = []
+            self._lock_dists     = []
+            self._lock_headings  = []
+            self._lock_ticks     = 0
+            self._lock_committed = False
+            self._state          = State.LOCKING
 
+        # ---- LOCKING ----
         if self._state == State.LOCKING:
             if rvec is not None:
                 R_mat, _ = cv2.Rodrigues(rvec)
-                dock_offset = (
-                    DOCK_DIST * R_mat[:, 2].flatten() + tvec.flatten())
-                dock_lat = float(dock_offset[0])
-                dock_z = float(dock_offset[2])
-                self.get_logger().info(
-                    f'PnP: tvec={tvec.flatten()} dock_offset={dock_offset} dock_z={dock_z:.3f}')
+                # Point DOCK_DIST in front of marker face
+                dock_offset = DOCK_DIST * R_mat[:, 2].flatten() + tvec.flatten()
+                dock_lat    = float(dock_offset[0])
+                dock_z      = float(dock_offset[2])
+
                 if dock_z > 0:
                     bearing = float(np.arctan2(dock_lat, dock_z))
-                    dist = float(np.sqrt(dock_lat**2 + dock_z**2))
+                    dist    = float(np.sqrt(dock_lat**2 + dock_z**2))
                     heading = _heading_from_rvec(rvec)
-                    self._lock_bearings.append(bearing)
-                    self._lock_dists.append(dist)
-                    self._lock_headings.append(heading)
-                    self.get_logger().info(
-                        f'  LOCKING [{len(self._lock_bearings)}/{LOCK_N}]  '
-                        f'bearing={np.degrees(bearing):+.1f}deg  '
-                        f'dist={dist:.3f}m  '
-                        f'heading={np.degrees(heading):+.1f}deg')
-                    if len(self._lock_bearings) >= LOCK_N:
-                        self._commit_lock()
-            cv2.putText(
-                debug,
+
+                    # [FIX-7] Reject outliers relative to running median
+                    accept = True
+                    if len(self._lock_bearings) >= 2:
+                        med = float(np.median(self._lock_bearings))
+                        if abs(np.degrees(bearing - med)) > BEARING_OUTLIER_DEG:
+                            self.get_logger().warn(
+                                f'LOCKING: outlier rejected '
+                                f'(bearing={np.degrees(bearing):+.1f}deg '
+                                f'vs median={np.degrees(med):+.1f}deg)')
+                            accept = False
+
+                    if accept:
+                        self._lock_bearings.append(bearing)
+                        self._lock_dists.append(dist)
+                        self._lock_headings.append(heading)
+                        self.get_logger().info(
+                            f'  LOCKING [{len(self._lock_bearings)}/{LOCK_N}]  '
+                            f'bearing={np.degrees(bearing):+.1f}deg  '
+                            f'dist={dist:.3f}m  '
+                            f'heading={np.degrees(heading):+.1f}deg')
+                        if len(self._lock_bearings) >= LOCK_N:
+                            self._commit_lock()
+
+            cv2.putText(debug,
                 f'LOCKING {len(self._lock_bearings)}/{LOCK_N}',
                 (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+            self._publish_debug(debug, stamp)
+            return
+
+        # ---- APPROACH (closed-loop) ----
+        # [FIX-1] Replace open-loop timed drive with PnP-feedback P-controller.
+        if self._state == State.APPROACH:
+            if rvec is None:
+                self._lost_frames += 1
+                self.get_logger().warn(
+                    f'APPROACH: marker lost ({self._lost_frames}/{MAX_LOST_FRAMES})')
+                if self._lost_frames >= MAX_LOST_FRAMES:
+                    self.get_logger().error('Marker lost too long — aborting.')
+                    self._stop()
+                    self._state = State.FAILED
+                else:
+                    self._stop()
+                self._publish_debug(debug, stamp)
+                return
+
+            self._lost_frames = 0
+            t    = tvec.flatten()
+            dist = float(np.linalg.norm(t))
+            # Lateral error → angular correction to steer toward marker
+            lateral      = t[0]
+            bearing_err  = float(np.arctan2(lateral, t[2]))
+
+            if dist <= DOCK_DIST + APPROACH_DIST_TOL:
+                self._stop()
+                self.get_logger().info(
+                    f'APPROACH done (dist={dist:.3f}m) — switching to ALIGN.')
+                self._lost_frames = 0
+                self._state = State.ALIGN
+            else:
+                drive_err = dist - DOCK_DIST
+                lin  = float(np.clip(KP_LINEAR  * drive_err, 0.0, MAX_LINEAR))
+                ang  = float(np.clip(-KP_ANGULAR * bearing_err,
+                                     -MAX_ANGULAR, MAX_ANGULAR))
+                self._send_cmd(linear_x=lin, angular_z=ang)
+
+            self._publish_debug(debug, stamp)
+            return
+
+        # ---- ALIGN (closed-loop heading correction) ----
+        if self._state == State.ALIGN:
+            if rvec is None:
+                self._lost_frames += 1
+                if self._lost_frames >= MAX_LOST_FRAMES:
+                    self.get_logger().error('Marker lost in ALIGN — aborting.')
+                    self._stop()
+                    self._state = State.FAILED
+                else:
+                    self._stop()
+                self._publish_debug(debug, stamp)
+                return
+
+            self._lost_frames = 0
+            heading = _heading_from_rvec(rvec)
+
+            if abs(np.degrees(heading)) <= ALIGN_ANGLE_TOL_DEG:
+                self._stop()
+                self.get_logger().info(
+                    f'ALIGN done (heading={np.degrees(heading):+.1f}deg) '
+                    f'— switching to VERIFY.')
+                self._state = State.VERIFY
+            else:
+                ang = float(np.clip(KP_ANGULAR * heading,
+                                    -MAX_ANGULAR, MAX_ANGULAR))
+                self._send_cmd(angular_z=ang)
+
+            self._publish_debug(debug, stamp)
+            return
+
+        # ---- VERIFY — final sanity check before declaring DONE ----
+        # [FIX-6] One-shot PnP verification. Reset to SEARCHING if tolerance not met.
+        if self._state == State.VERIFY:
+            if rvec is None:
+                self.get_logger().warn('VERIFY: no marker — retrying APPROACH.')
+                self._reset()
+                self._publish_debug(debug, stamp)
+                return
+
+            t    = tvec.flatten()
+            dist = float(np.linalg.norm(t))
+            self.get_logger().info(
+                f'VERIFY: final dist={dist:.3f}m '
+                f'(tol±{VERIFY_DIST_TOL}m from {DOCK_DIST}m)')
+
+            if abs(dist - DOCK_DIST) <= VERIFY_DIST_TOL:
+                self._stop()
+                self.get_logger().info('Docking VERIFIED — DONE.')
+                self._state = State.DONE
+            else:
+                self.get_logger().warn(
+                    f'VERIFY failed (dist={dist:.3f}m) — resetting to SEARCHING.')
+                self._reset()
+
+            self._publish_debug(debug, stamp)
+            return
 
         self._publish_debug(debug, stamp)
 
@@ -378,9 +463,9 @@ class ArucoDockNode(Node):
 
     def _send_cmd(self, linear_x: float = 0.0, angular_z: float = 0.0):
         cmd = TwistStamped()
-        cmd.header.stamp = self.get_clock().now().to_msg()
+        cmd.header.stamp    = self.get_clock().now().to_msg()
         cmd.header.frame_id = 'base_link'
-        cmd.twist.linear.x = linear_x
+        cmd.twist.linear.x  = linear_x
         cmd.twist.angular.z = angular_z
         self._cmd_vel_pub.publish(cmd)
         if linear_x != 0.0 or angular_z != 0.0:
