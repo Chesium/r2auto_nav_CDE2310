@@ -52,7 +52,7 @@ VERIFY_DIST_TOL     = 0.06   # metres  — final check tolerance
 
 # Proportional gains for closed-loop control
 KP_LINEAR  = 0.6   # (dist_error) → linear.x
-KP_ANGULAR = 1.2   # (angle_error_rad) → angular.z
+KP_ANGULAR = 0.6   # (angle_error_rad) → angular.z
 
 ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
 
@@ -379,7 +379,6 @@ class ArucoDockNode(Node):
             self._lost_frames = 0
             t    = tvec.flatten()
             dist = float(np.linalg.norm(t))
-            # Lateral error → angular correction to steer toward marker
             lateral      = t[0]
             bearing_err  = float(np.arctan2(lateral, t[2]))
 
@@ -392,8 +391,11 @@ class ArucoDockNode(Node):
             else:
                 drive_err = dist - DOCK_DIST
                 lin  = float(np.clip(KP_LINEAR  * drive_err, 0.0, MAX_LINEAR))
-                ang  = float(np.clip(-KP_ANGULAR * bearing_err,
-                                     -MAX_ANGULAR, MAX_ANGULAR))
+                # Distance-weighted angular correction: dampens as robot closes in
+                # so the controller doesn't thrash when nearly at dock distance.
+                ang  = float(np.clip(
+                    -KP_ANGULAR * bearing_err * (dist / DOCK_DIST),
+                    -MAX_ANGULAR, MAX_ANGULAR))
                 self._send_cmd(linear_x=lin, angular_z=ang)
 
             self._publish_debug(debug, stamp)
