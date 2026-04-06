@@ -25,7 +25,7 @@ from geometry_msgs.msg import Twist, TwistStamped
 
 # --------------- tunables ---------------
 MARKER_SIZE = 0.165       # marker square side (metres)
-DOCK_DIST = 0.50          # stop distance from marker (metres)
+DOCK_DIST = 0.30          # stop distance from marker (metres)
 # STRAFE_DIST = 0.15      # lateral strafe (m) — re-enable if camera is off-centre
 TARGET_MARKER = 42        # ArUco ID to track
 MAX_LINEAR = 0.12         # m/s
