@@ -6,20 +6,12 @@ Ported from Arnav-Jhajharia/cde2310_sim_ws (tb3_cv) and adapted for:
   - Gazebo Harmonic (ogre2 rendering)
 
 State machine:
-  SEARCHING → LOCKING → APPROACH (closed-loop PnP feedback) → ALIGN → VERIFY → DONE
+  SEARCHING → LOCKING → STEP_SETTLE → STEP_TURN / STEP_DRIVE → STEP_SETTLE → ... → VERIFY → DONE
 
-Changes from original:
-  [FIX-1] Open-loop nav replaced with closed-loop PnP feedback in APPROACH + ALIGN states.
-  [FIX-2] IPPE_SQUARE solution selection uses tvec[2] > 0 (marker in front of camera),
-          not the incorrect R[2,2] < 0 rotation check.
-  [FIX-3] Removed unjustified * 1.5 heading multiplier. Heading derived analytically.
-  [FIX-4] DetectorParameters allocated once in __init__, not per frame.
-  [FIX-5] _commit_lock() is idempotent — guarded by a flag to prevent double-commit
-          if executor is ever switched to MultiThreadedExecutor.
-  [FIX-6] VERIFY state: performs one final PnP check before declaring DONE.
-          Resets to SEARCHING if dock tolerance not met.
-  [FIX-7] LOCKING bimodal guard: samples whose bearing deviates > 10 deg from
-          running median are rejected.
+Architecture: step-and-correct.
+  The robot executes a fixed-duration burst (turn or drive), stops, waits for
+  the robot to physically settle, reads PnP, then decides the next burst.
+  This tolerates slow camera framerates and cmd_vel actuation latency.
 """
 
 import rclpy
@@ -39,20 +31,18 @@ from geometry_msgs.msg import Twist, TwistStamped
 MARKER_SIZE   = 0.165   # marker square side (metres)
 DOCK_DIST     = 0.30    # desired stop distance from marker (metres)
 TARGET_MARKER = 42      # ArUco ID to track
-MAX_LINEAR    = 0.10    # m/s  (conservative for closed-loop)
-MAX_ANGULAR   = 0.40    # rad/s
+APPROACH_DIST_TOL   = 0.06   # metres  — within this → VERIFY
+ALIGN_ANGLE_TOL_DEG = 5.0    # degrees — within this → drive step
 
 LOCK_N              = 8      # pose samples before committing
 BEARING_OUTLIER_DEG = 10.0   # [FIX-7] reject samples this far from running median
 
-# Closed-loop approach tolerances
-APPROACH_DIST_TOL   = 0.04   # metres  — within this → start ALIGN
-ALIGN_ANGLE_TOL_DEG = 3.0    # degrees — within this → VERIFY
-VERIFY_DIST_TOL     = 0.06   # metres  — final check tolerance
-
-# Proportional gains for closed-loop control
-KP_LINEAR  = 0.6   # (dist_error) → linear.x
-KP_ANGULAR = 0.6   # (angle_error_rad) → angular.z
+# Step-and-correct parameters
+STEP_LINEAR_SECS  = 0.4   # drive burst duration (seconds)
+STEP_ANGULAR_SECS = 0.3   # turn burst duration (seconds)
+STEP_LINEAR_VEL   = 0.08  # m/s during drive burst
+STEP_ANGULAR_VEL  = 0.25  # rad/s during turn burst
+STEP_SETTLE_SECS  = 0.5   # pause after burst before reading PnP
 
 ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
 
@@ -71,13 +61,14 @@ MAX_LOST_FRAMES = 15
 
 
 class State(Enum):
-    SEARCHING = auto()
-    LOCKING   = auto()
-    APPROACH  = auto()   # closed-loop: drive toward dock point
-    ALIGN     = auto()   # closed-loop: rotate to face marker squarely
-    VERIFY    = auto()   # one-shot PnP sanity check
-    DONE      = auto()
-    FAILED    = auto()
+    SEARCHING    = auto()
+    LOCKING      = auto()
+    STEP_TURN    = auto()   # burst: rotate toward bearing
+    STEP_DRIVE   = auto()   # burst: drive forward
+    STEP_SETTLE  = auto()   # pause: wait for robot to stop, then read PnP
+    VERIFY       = auto()   # within tolerance: final PnP check
+    DONE         = auto()
+    FAILED       = auto()
 
 
 def _heading_from_rvec(rvec: np.ndarray) -> float:
@@ -123,8 +114,9 @@ class ArucoDockNode(Node):
         # [FIX-5] Guard against double-commit
         self._lock_committed = False
 
-        # Closed-loop state
-        self._lost_frames = 0
+        # Step-and-correct state
+        self._lost_frames  = 0
+        self._step_start_ns = 0
 
         # Subscriptions
         self.create_subscription(
@@ -184,10 +176,11 @@ class ArucoDockNode(Node):
         self.get_logger().info(
             f'Lock committed: bearing={np.degrees(bearing):+.1f}deg  '
             f'dist={dist:.3f}m  heading={np.degrees(heading):+.1f}deg  '
-            f'→ switching to closed-loop APPROACH')
+            f'→ STEP_SETTLE for initial PnP read')
 
-        self._lost_frames = 0
-        self._state = State.APPROACH
+        self._lost_frames  = 0
+        self._step_start_ns = self.get_clock().now().nanoseconds
+        self._state = State.STEP_SETTLE
 
     # ------------------------------------------------------------------ #
     # Camera callbacks
@@ -360,74 +353,74 @@ class ArucoDockNode(Node):
             self._publish_debug(debug, stamp)
             return
 
-        # ---- APPROACH (closed-loop) ----
-        # [FIX-1] Replace open-loop timed drive with PnP-feedback P-controller.
-        if self._state == State.APPROACH:
+        # ---- STEP_SETTLE — robot has stopped, read PnP and decide next action ----
+        if self._state == State.STEP_SETTLE:
+            now_ns = self.get_clock().now().nanoseconds
+            elapsed = (now_ns - self._step_start_ns) / 1e9
+            if elapsed < STEP_SETTLE_SECS:
+                # Not settled yet — wait
+                self._publish_debug(debug, stamp)
+                return
+
             if rvec is None:
                 self._lost_frames += 1
                 self.get_logger().warn(
-                    f'APPROACH: marker lost ({self._lost_frames}/{MAX_LOST_FRAMES})')
-                if self._lost_frames >= MAX_LOST_FRAMES:
-                    self.get_logger().error('Marker lost too long — aborting.')
-                    self._stop()
+                    f'STEP_SETTLE: no marker ({self._lost_frames}/5)')
+                if self._lost_frames >= 5:
+                    self.get_logger().error('Cannot see marker — aborting.')
                     self._state = State.FAILED
-                else:
-                    self._stop()
                 self._publish_debug(debug, stamp)
                 return
 
             self._lost_frames = 0
-            t    = tvec.flatten()
-            dist = float(np.linalg.norm(t))
-            lateral      = t[0]
-            bearing_err  = float(np.arctan2(lateral, t[2]))
+            t       = tvec.flatten()
+            dist    = float(np.linalg.norm(t))
+            lateral = t[0]
+            bearing = float(np.arctan2(lateral, t[2]))
+            heading = _heading_from_rvec(rvec)
 
+            self.get_logger().info(
+                f'SETTLE read: dist={dist:.3f}m  '
+                f'bearing={np.degrees(bearing):+.1f}deg  '
+                f'heading={np.degrees(heading):+.1f}deg')
+
+            # Within dock tolerance → VERIFY
             if dist <= DOCK_DIST + APPROACH_DIST_TOL:
-                self._stop()
+                self.get_logger().info('Within dock distance → VERIFY.')
+                self._state = State.VERIFY
+                self._publish_debug(debug, stamp)
+                return
+
+            # Need to turn first to face the dock point
+            if abs(np.degrees(bearing)) > ALIGN_ANGLE_TOL_DEG:
                 self.get_logger().info(
-                    f'APPROACH done (dist={dist:.3f}m) — switching to ALIGN.')
-                self._lost_frames = 0
-                self._state = State.ALIGN
+                    f'Turning {np.degrees(bearing):+.1f}deg to face dock point.')
+                duration = abs(bearing) / STEP_ANGULAR_VEL
+                turn_secs = min(duration, STEP_ANGULAR_SECS)
+                self._send_cmd(
+                    angular_z=-STEP_ANGULAR_VEL * np.sign(bearing))
+                self._step_start_ns = self.get_clock().now().nanoseconds
+                # Schedule stop + settle
+                self.create_timer(
+                    turn_secs,
+                    lambda: self._end_step())
+                self._state = State.STEP_TURN
             else:
-                drive_err = dist - DOCK_DIST
-                lin  = float(np.clip(KP_LINEAR  * drive_err, 0.0, MAX_LINEAR))
-                # Distance-weighted angular correction: dampens as robot closes in
-                # so the controller doesn't thrash when nearly at dock distance.
-                ang  = float(np.clip(
-                    -KP_ANGULAR * bearing_err * (dist / DOCK_DIST),
-                    -MAX_ANGULAR, MAX_ANGULAR))
-                self._send_cmd(linear_x=lin, angular_z=ang)
+                # Heading acceptable — drive a step forward
+                self.get_logger().info(
+                    f'Driving step toward marker (dist={dist:.3f}m).')
+                self._send_cmd(linear_x=STEP_LINEAR_VEL)
+                self._step_start_ns = self.get_clock().now().nanoseconds
+                self.create_timer(
+                    STEP_LINEAR_SECS,
+                    lambda: self._end_step())
+                self._state = State.STEP_DRIVE
 
             self._publish_debug(debug, stamp)
             return
 
-        # ---- ALIGN (closed-loop heading correction) ----
-        if self._state == State.ALIGN:
-            if rvec is None:
-                self._lost_frames += 1
-                if self._lost_frames >= MAX_LOST_FRAMES:
-                    self.get_logger().error('Marker lost in ALIGN — aborting.')
-                    self._stop()
-                    self._state = State.FAILED
-                else:
-                    self._stop()
-                self._publish_debug(debug, stamp)
-                return
-
-            self._lost_frames = 0
-            heading = _heading_from_rvec(rvec)
-
-            if abs(np.degrees(heading)) <= ALIGN_ANGLE_TOL_DEG:
-                self._stop()
-                self.get_logger().info(
-                    f'ALIGN done (heading={np.degrees(heading):+.1f}deg) '
-                    f'— switching to VERIFY.')
-                self._state = State.VERIFY
-            else:
-                ang = float(np.clip(KP_ANGULAR * heading,
-                                    -MAX_ANGULAR, MAX_ANGULAR))
-                self._send_cmd(angular_z=ang)
-
+        # STEP_TURN and STEP_DRIVE are timer-driven — image_cb does nothing
+        if self._state in (State.STEP_TURN, State.STEP_DRIVE):
             self._publish_debug(debug, stamp)
             return
 
@@ -463,6 +456,14 @@ class ArucoDockNode(Node):
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+
+    def _end_step(self):
+        """Stop the robot and transition to STEP_SETTLE for next PnP read."""
+        if self._state in (State.STEP_TURN, State.STEP_DRIVE):
+            self._stop()
+            self.get_logger().info('Step done — settling.')
+            self._step_start_ns = self.get_clock().now().nanoseconds
+            self._state = State.STEP_SETTLE
 
     def _send_cmd(self, linear_x: float = 0.0, angular_z: float = 0.0):
         cmd = TwistStamped()
