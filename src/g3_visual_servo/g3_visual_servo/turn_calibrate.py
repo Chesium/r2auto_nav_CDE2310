@@ -43,14 +43,35 @@ class TurnCalibrate(Node):
         self._done = False
         self._timer = self.create_timer(0.02, self._tick)  # 50 Hz
 
+        self._countdown = 5  # seconds before starting
+        self._counting = True
+
         self.get_logger().info(
             f'Turning {degrees:+.1f} deg  '
             f'(duration={self._duration:.3f}s  angular_z={self._angular_z:+.2f} rad/s)'
         )
-        self.get_logger().info('Place a reference mark NOW, then watch the robot turn.')
+        self.get_logger().info(
+            'Starting in 5 seconds — open "ros2 topic echo /cmd_vel" in another terminal NOW.'
+        )
 
     def _tick(self):
         now = self.get_clock().now().nanoseconds
+
+        # countdown phase
+        if self._counting:
+            if self._start_ns is None:
+                self._start_ns = now
+            elapsed = (now - self._start_ns) / 1e9
+            remaining = self._countdown - elapsed
+            if remaining > 0:
+                if int(remaining) != getattr(self, '_last_countdown', -1):
+                    self._last_countdown = int(remaining)
+                    self.get_logger().info(f'Starting in {int(remaining)+1}...')
+                return
+            self.get_logger().info('GO — turning now. Place reference mark!')
+            self._counting = False
+            self._start_ns = None  # reset for the actual turn
+            return
 
         if self._start_ns is None:
             self._start_ns = now
