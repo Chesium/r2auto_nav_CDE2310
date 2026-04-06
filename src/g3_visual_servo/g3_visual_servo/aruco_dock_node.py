@@ -110,8 +110,9 @@ class ArucoDockNode(Node):
         self._last_process_ns = 0
         self._min_process_interval_ns = int(0.1 * 1e9)  # 10 Hz max
 
-        # [FIX-4] Allocate detector parameters once, not per frame.
-        self._detector_params = aruco.DetectorParameters()
+        # [FIX-4] Allocate once. Use DetectorParameters_create() — the correct
+        # 4.6 API. DetectorParameters() constructor form segfaults with detectMarkers().
+        self._detector_params = aruco.DetectorParameters_create()
 
         # LOCKING accumulators
         self._lock_bearings: list[float] = []
