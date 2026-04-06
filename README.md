@@ -245,6 +245,9 @@ ros2 pkg create --build-type ament_python --license Apache-2.0 g3bringup
 ros2 pkg create --build-type ament_python --license Apache-2.0 g3exploration
 ```
 
+
+note for servo: might need to run pip install pyserial --break-system-packages in dev container
+
 recommended file tree by Chat-GPT:
 
 ```
