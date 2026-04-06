@@ -6,8 +6,8 @@ Ported from Arnav-Jhajharia/cde2310_sim_ws (tb3_cv) and adapted for:
   - Gazebo Harmonic (ogre2 rendering)
 
 State machine:
-  SEARCHING → LOCKING → TURN_TO_DOCK → DRIVE_TO_DOCK →
-  TURN_TO_MARKER → TURN_RIGHT → STRAFE → TURN_LEFT → DONE
+  SEARCHING → LOCKING → TURN_TO_DOCK → DRIVE_TO_DOCK → TURN_TO_MARKER → DONE
+  (TURN_RIGHT → STRAFE → TURN_LEFT commented out — re-enable for off-centre camera)
 """
 
 import rclpy
@@ -26,7 +26,7 @@ from geometry_msgs.msg import Twist, TwistStamped
 # --------------- tunables ---------------
 MARKER_SIZE = 0.165       # marker square side (metres)
 DOCK_DIST = 0.50          # stop distance from marker (metres)
-STRAFE_DIST = 0.15        # lateral approach (metres)
+# STRAFE_DIST = 0.15      # lateral strafe (m) — re-enable if camera is off-centre
 TARGET_MARKER = 42        # ArUco ID to track
 MAX_LINEAR = 0.12         # m/s
 MAX_ANGULAR = 0.5         # rad/s
@@ -34,8 +34,8 @@ LOCK_N = 8                # pose samples before committing
 
 ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
 
-TURN_90_SECS = (np.pi / 2) / MAX_ANGULAR
-STRAFE_SECS = STRAFE_DIST / MAX_LINEAR
+# TURN_90_SECS = (np.pi / 2) / MAX_ANGULAR   # used by pseudo-strafe
+# STRAFE_SECS = STRAFE_DIST / MAX_LINEAR      # used by pseudo-strafe
 
 MARKER_OBJECT_POINTS = np.array([
     [-MARKER_SIZE / 2,  MARKER_SIZE / 2, 0],
@@ -56,9 +56,9 @@ class State(Enum):
     TURN_TO_DOCK = auto()
     DRIVE_TO_DOCK = auto()
     TURN_TO_MARKER = auto()
-    TURN_RIGHT = auto()
-    STRAFE = auto()
-    TURN_LEFT = auto()
+    # TURN_RIGHT = auto()  # pseudo-strafe for off-centre camera — disabled (camera is centred)
+    # STRAFE = auto()
+    # TURN_LEFT = auto()
     DONE = auto()
 
 
@@ -191,38 +191,42 @@ class ArucoDockNode(Node):
             duration = abs(self._target_final_turn) / MAX_ANGULAR
             if elapsed >= duration:
                 self._stop()
-                self.get_logger().info('Facing marker — turning right.')
-                self._phase_start_ns = self.get_clock().now().nanoseconds
-                self._state = State.TURN_RIGHT
+                self.get_logger().info('Docking complete.')
+                self._state = State.DONE
             else:
                 self._send_cmd(angular_z=float(
                     MAX_ANGULAR * np.sign(self._target_final_turn)))
 
-        elif self._state == State.TURN_RIGHT:
-            if elapsed >= TURN_90_SECS:
-                self._stop()
-                self.get_logger().info('Turn right done — strafing.')
-                self._phase_start_ns = self.get_clock().now().nanoseconds
-                self._state = State.STRAFE
-            else:
-                self._send_cmd(angular_z=-MAX_ANGULAR)
-
-        elif self._state == State.STRAFE:
-            if elapsed >= STRAFE_SECS:
-                self._stop()
-                self.get_logger().info('Strafe done — turning left.')
-                self._phase_start_ns = self.get_clock().now().nanoseconds
-                self._state = State.TURN_LEFT
-            else:
-                self._send_cmd(linear_x=MAX_LINEAR)
-
-        elif self._state == State.TURN_LEFT:
-            if elapsed >= TURN_90_SECS:
-                self._stop()
-                self.get_logger().info('Docking complete.')
-                self._state = State.DONE
-            else:
-                self._send_cmd(angular_z=MAX_ANGULAR)
+        # --- pseudo-strafe disabled: camera is centred on robot ---
+        # Re-enable these blocks (and TURN_RIGHT/STRAFE/TURN_LEFT in State enum
+        # and STRAFE_DIST/TURN_90_SECS/STRAFE_SECS constants) if the camera is
+        # mounted off-centre and a lateral correction is needed.
+        #
+        # elif self._state == State.TURN_RIGHT:
+        #     if elapsed >= TURN_90_SECS:
+        #         self._stop()
+        #         self.get_logger().info('Turn right done — strafing.')
+        #         self._phase_start_ns = self.get_clock().now().nanoseconds
+        #         self._state = State.STRAFE
+        #     else:
+        #         self._send_cmd(angular_z=-MAX_ANGULAR)
+        #
+        # elif self._state == State.STRAFE:
+        #     if elapsed >= STRAFE_SECS:
+        #         self._stop()
+        #         self.get_logger().info('Strafe done — turning left.')
+        #         self._phase_start_ns = self.get_clock().now().nanoseconds
+        #         self._state = State.TURN_LEFT
+        #     else:
+        #         self._send_cmd(linear_x=MAX_LINEAR)
+        #
+        # elif self._state == State.TURN_LEFT:
+        #     if elapsed >= TURN_90_SECS:
+        #         self._stop()
+        #         self.get_logger().info('Docking complete.')
+        #         self._state = State.DONE
+        #     else:
+        #         self._send_cmd(angular_z=MAX_ANGULAR)
 
     # ------------------------------------------------------------------ #
     # Camera callbacks
