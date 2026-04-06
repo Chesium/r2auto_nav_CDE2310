@@ -20,7 +20,7 @@ import numpy as np
 from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 
 
 # --------------- tunables ---------------
@@ -107,7 +107,7 @@ class ArucoDockNode(Node):
         self._debug_pub = self.create_publisher(
             Image, '/aruco_debug/image_raw', 10)
         self._cmd_vel_pub = self.create_publisher(
-            Twist, '/cmd_vel', 10)
+            TwistStamped, '/cmd_vel', 10)
 
         # Timers
         self.create_timer(1.0, self._tick)
@@ -373,9 +373,11 @@ class ArucoDockNode(Node):
     # ------------------------------------------------------------------ #
 
     def _send_cmd(self, linear_x: float = 0.0, angular_z: float = 0.0):
-        cmd = Twist()
-        cmd.linear.x = linear_x
-        cmd.angular.z = angular_z
+        cmd = TwistStamped()
+        cmd.header.stamp = self.get_clock().now().to_msg()
+        cmd.header.frame_id = 'base_link'
+        cmd.twist.linear.x = linear_x
+        cmd.twist.angular.z = angular_z
         self._cmd_vel_pub.publish(cmd)
         if linear_x != 0.0 or angular_z != 0.0:
             self.get_logger().info(
