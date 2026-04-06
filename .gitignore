@@ -7,3 +7,9 @@ logs
 __pycache__
 .pytest_cache
 docker/ros_network.env
+
+# Local dev tools / troubleshooting artifacts
+sim_dashboard/
+scripts/
+ros2-mac-bridge/
+ros2-docker-dds-fix/

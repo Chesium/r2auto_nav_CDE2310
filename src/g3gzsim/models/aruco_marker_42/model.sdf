@@ -1,0 +1,27 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="aruco_marker_42">
+    <static>true</static>
+    <link name="link">
+      <!-- Thin placard: 0.18m x 0.18m marker face, 0.005m thick -->
+      <visual name="marker_visual">
+        <geometry>
+          <box><size>0.005 0.18 0.18</size></box>
+        </geometry>
+        <material>
+          <diffuse>1 1 1 1</diffuse>
+          <pbr>
+            <metal>
+              <albedo_map>materials/textures/marker42.png</albedo_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <collision name="marker_collision">
+        <geometry>
+          <box><size>0.005 0.18 0.18</size></box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

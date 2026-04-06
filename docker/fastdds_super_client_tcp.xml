@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+
+    <!-- TCP transport: client-initiated, no listening port -->
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>tcp_client</transport_id>
+        <type>TCPv4</type>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="super_client_tcp" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>tcp_client</transport_id>
+        </userTransports>
+        <!-- CRITICAL: disable builtin UDP transports -->
+        <useBuiltinTransports>false</useBuiltinTransports>
+
+        <builtin>
+          <discovery_config>
+            <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>
+            <discoveryServersList>
+              <RemoteServer prefix="44.53.00.5f.45.50.52.4f.53.49.4d.41">
+                <metatrafficUnicastLocatorList>
+                  <locator>
+                    <tcpv4>
+                      <address>10.42.0.1</address>
+                      <physical_port>11811</physical_port>
+                    </tcpv4>
+                  </locator>
+                </metatrafficUnicastLocatorList>
+              </RemoteServer>
+            </discoveryServersList>
+          </discovery_config>
+          <metatrafficUnicastLocatorList>
+            <locator>
+              <tcpv4>
+                <address>10.42.0.1</address>
+                <physical_port>11811</physical_port>
+              </tcpv4>
+            </locator>
+          </metatrafficUnicastLocatorList>
+        </builtin>
+      </rtps>
+    </participant>
+
+  </profiles>
+</dds>

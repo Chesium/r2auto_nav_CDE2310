@@ -58,11 +58,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-nav2-minimal-tb3-sim \
     ros-${ROS_DISTRO}-navigation2 \
-    ros-${ROS_DISTRO}-rmw-fastrtps-cpp && \
+    ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
+    # Mesa / EGL for headless Gazebo rendering (macOS Docker)
+    libegl1 \
+    libegl-dev \
+    libgl1-mesa-dri \
+    libgles2 \
+    mesa-utils \
+    xvfb && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --gid "${USER_GID}" "${USERNAME}" && \
-    useradd --uid "${USER_UID}" --gid "${USER_GID}" -m -s /bin/bash "${USERNAME}" && \
+RUN if getent group "${USER_GID}" >/dev/null; then \
+      EXISTING_GROUP="$(getent group "${USER_GID}" | cut -d: -f1)"; \
+    elif getent group "${USERNAME}" >/dev/null; then \
+      EXISTING_GROUP="${USERNAME}"; \
+    else \
+      groupadd --gid "${USER_GID}" "${USERNAME}"; \
+      EXISTING_GROUP="${USERNAME}"; \
+    fi && \
+    EXISTING_UID_USER="$(getent passwd "${USER_UID}" | cut -d: -f1 || true)" && \
+    if id -u "${USERNAME}" >/dev/null 2>&1; then \
+      usermod --uid "${USER_UID}" --gid "${EXISTING_GROUP}" --shell /bin/bash "${USERNAME}"; \
+    elif [[ -n "${EXISTING_UID_USER}" ]]; then \
+      if getent group "${EXISTING_UID_USER}" >/dev/null && ! getent group "${USERNAME}" >/dev/null; then \
+        groupmod --new-name "${USERNAME}" "${EXISTING_UID_USER}"; \
+        EXISTING_GROUP="${USERNAME}"; \
+      fi && \
+      usermod --login "${USERNAME}" "${EXISTING_UID_USER}" && \
+      usermod --home "/home/${USERNAME}" --move-home --gid "${EXISTING_GROUP}" --shell /bin/bash "${USERNAME}"; \
+    else \
+      useradd --uid "${USER_UID}" --gid "${EXISTING_GROUP}" -m -s /bin/bash "${USERNAME}"; \
+    fi && \
     usermod -aG sudo "${USERNAME}" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
     chmod 0440 "/etc/sudoers.d/${USERNAME}"
@@ -91,12 +117,12 @@ RUN mkdir -p /home/${USERNAME}/turtlebot3_ws/src && \
     git clone -b ${TURTLEBOT3_BRANCH} https://github.com/ROBOTIS-GIT/turtlebot3_msgs.git /home/${USERNAME}/turtlebot3_ws/src/turtlebot3_msgs && \
     git clone -b ${TURTLEBOT3_BRANCH} https://github.com/ROBOTIS-GIT/turtlebot3.git /home/${USERNAME}/turtlebot3_ws/src/turtlebot3 && \
     source /opt/ros/${ROS_DISTRO}/setup.bash && \
-    rosdep update && \
-    rosdep install --from-paths /home/${USERNAME}/turtlebot3_ws/src --ignore-src --rosdistro ${ROS_DISTRO} -r -y && \
     cd /home/${USERNAME}/turtlebot3_ws && \
     colcon build --symlink-install
 
 RUN printf '\nexport NAV_WS=${NAV_WS:-$HOME/nav_ws}\n[ -f /usr/local/share/navws/portable_bashrc.sh ] && source /usr/local/share/navws/portable_bashrc.sh\n' >> /home/${USERNAME}/.bashrc
+
+ENV BASH_ENV=/usr/local/share/navws/portable_bashrc.sh
 
 WORKDIR ${NAV_WS}
 ENTRYPOINT ["/usr/local/bin/navws-entrypoint"]

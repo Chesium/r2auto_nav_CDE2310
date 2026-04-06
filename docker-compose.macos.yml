@@ -1,0 +1,21 @@
+# macOS overlay — no X11/Wayland, headless Gazebo with software rendering.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.macos.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.macos.yml exec dev bash
+
+services:
+  dev:
+    platform: linux/amd64  # osrf/ros:jazzy-desktop is amd64-only; runs via Rosetta
+    environment:
+      # Virtual framebuffer started by entrypoint — Gazebo sensors need it
+      DISPLAY: ":99"
+      WAYLAND_DISPLAY: ""
+      XDG_RUNTIME_DIR: ""
+      PULSE_SERVER: ""
+      # Headless rendering via Mesa llvmpipe
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      MESA_GL_VERSION_OVERRIDE: "3.3"
+      __NV_PRIME_RENDER_OFFLOAD: "0"
+    ports:
+      - "5050:5000"     # Web dashboard (5050 on host — macOS AirPlay uses 5000)
+      - "8765:8765"     # Foxglove bridge

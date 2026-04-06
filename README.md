@@ -34,7 +34,7 @@ The container will auto-create `docker/ros_network.env` from the example on firs
 cp docker/ros_network.env.example docker/ros_network.env
 ```
 
-Edit [docker/ros_network.env.example](/home/chesium/cde2310/nav_ws/docker/ros_network.env.example) as a reference, and keep your machine-specific values in `docker/ros_network.env`.
+Edit [docker/ros_network.env.example](docker/ros_network.env.example) as a reference, and keep your machine-specific values in `docker/ros_network.env`.
 
 The values intended for quick changes are:
 
@@ -43,6 +43,8 @@ The values intended for quick changes are:
 - `ROS_DISCOVERY_INTERFACE`
 - `ROS_DISCOVERY_PORT`
 
+By default, `docker/ros_network.env` now leaves `ROS_DISCOVERY_SERVER` unset so terminals inside the same dev container use normal ROS 2 peer discovery immediately. Only set `ROS_DISCOVERY_SERVER` when you are intentionally using a Fast DDS discovery server for laptop/robot communication.
+
 ### 4. Start the dev container
 
 Native Ubuntu 22.04 / 24.04:
@@ -50,14 +52,14 @@ Native Ubuntu 22.04 / 24.04:
 ```bash
 xhost +local:docker
 docker compose -f docker-compose.linux-host.yml up -d
-docker compose exec dev bash
+docker compose -f docker-compose.linux-host.yml exec dev bash
 ```
 
 WSL2 with Ubuntu 22.04 / 24.04 and WSLg:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.wslg.yml up -d
-docker compose exec dev bash
+docker compose -f docker-compose.yml -f docker-compose.wslg.yml exec dev bash
 ```
 
 Inside the container, the shell auto-sources:
@@ -76,6 +78,18 @@ and defines these commands:
 - `rteleop`
 - `discovery`
 
+For a quick local sanity check inside the container, open two shells and run:
+
+```bash
+talker
+```
+
+```bash
+ros2 node list
+```
+
+You should see `/talker` without needing `discovery`.
+
 ### 5. Build this workspace inside the container
 
 ```bash
@@ -86,7 +100,7 @@ roset
 
 ### VS Code Dev Container
 
-This repo also includes [.devcontainer/devcontainer.json](/home/chesium/cde2310/nav_ws/.devcontainer/devcontainer.json), so in VS Code you can:
+This repo also includes [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json), so in VS Code you can:
 
 ```bash
 code ~/nav_ws
@@ -94,7 +108,7 @@ code ~/nav_ws
 
 then run `Dev Containers: Reopen in Container`.
 
-By default the devcontainer uses [docker-compose.yml](/home/chesium/cde2310/nav_ws/docker-compose.yml), which is the more portable choice across Ubuntu and WSL2. If you are on native Ubuntu and want host networking from inside VS Code for robot communication, change the `dockerComposeFile` entry in [.devcontainer/devcontainer.json](/home/chesium/cde2310/nav_ws/.devcontainer/devcontainer.json) to `../docker-compose.linux-host.yml`.
+By default the devcontainer uses [docker-compose.yml](docker-compose.yml), which is the more portable choice across Ubuntu and WSL2. If you are on native Ubuntu and want host networking from inside VS Code for robot communication, change the `dockerComposeFile` entry in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) to `../docker-compose.linux-host.yml`.
 
 ### Notes on portability
 
@@ -144,7 +158,7 @@ ros2 service call /exploration/set_enabled std_srvs/srv/SetBool "{data: true}"
 
 - example output above: ip should be `172.20.10.9`
 - connect the same hot-spot on your laptop (if no ethernet and we are using phone hot-spot) and verify we can ssh into the rpi via the ip we just obtained `ssh g3@172.20.10.9` (type `yes` if necessary)
-- **Important for ROS 2 Connection:** On Laptop, ensure that you're running `fastdds discovery -i 0 -l 10.42.0.1 -p 11811` (replace the `10.42.0.1` with the actual laptop IP) in a terminal **before doing anything about ROS 2** after reboot or connect to a new hot-spot
+- **Important for ROS 2 Connection:** On Laptop, first edit `docker/ros_network.env` so `ROS_DISCOVERY_SERVER` and `ROS_DISCOVERY_INTERFACE` both use the laptop's actual reachable IP, then run `discovery` in a terminal **before doing anything about ROS 2** after reboot or connect to a new hot-spot
 - **Important for ROS 2 Connection:** edit the `~/.bashrc` on **Both RPI and the laptop**: add or modify the `ROS_DISCOVERY_SERVER` IP to be the same as the **laptop** IP (obtain also by running `ip a`)
 
 ```bash
@@ -230,6 +244,9 @@ ros2 pkg create --build-type ament_python --license Apache-2.0 g3navigation
 ros2 pkg create --build-type ament_python --license Apache-2.0 g3bringup
 ros2 pkg create --build-type ament_python --license Apache-2.0 g3exploration
 ```
+
+
+note for servo: might need to run pip install pyserial --break-system-packages in dev container
 
 recommended file tree by Chat-GPT:
 
@@ -387,3 +404,101 @@ note: run the nav 2 startup command (down-left) after the cartographer output st
 
 after you can see the costmap layers in the RViz interface,
 send the "start exploration" command in tmux A (down-right)
+
+# ArUco Visual Servo Docking
+
+Autonomous docking onto a 4×4 ArUco marker (ID 42, 16.5 cm) using the USB camera.
+Runs entirely on the laptop — no Nav2 required.
+
+## Prerequisites
+
+- ROS 2 connection to robot established (see *Update/Connect to Hot-spot* above)
+- `rosbu` running on the RPi (robot bringup — publishes `/cmd_vel`, `/odom`, etc.)
+
+## 1. Build on the laptop
+
+```bash
+cd ~/nav_ws
+colcon build --symlink-install --packages-select g3_visual_servo
+source install/setup.bash
+```
+
+## 2. Start the USB camera
+
+Run on the **laptop** (camera plugged into laptop USB):
+
+```bash
+ros2 run usb_cam usb_cam_node_exe --ros-args \
+  -p video_device:="/dev/video1" \
+  -p pixel_format:="mjpeg2rgb" \
+  -p image_width:=640 \
+  -p image_height:=480 \
+  -p camera_name:="usb_cam" \
+  -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
+  -r image_raw:=/usb_cam/image_raw \
+  -r camera_info:=/usb_cam/camera_info
+```
+
+> If you see `unable to open camera calibration file`, that is fine — the node will still publish images; pose estimation just uses a fallback.
+
+Verify the camera is streaming:
+
+```bash
+ros2 topic hz /usb_cam/image_raw
+```
+
+## 3. (Optional) Smoke-test cmd_vel
+
+Before running the full docking node, verify the robot will actually move:
+
+```bash
+ros2 run g3_visual_servo cmd_vel_test
+```
+
+The robot should drive forward ~0.3 m then stop. If it does not move, check that `rosbu` is running on the RPi and the ROS 2 discovery server is configured correctly.
+
+## 4. Run the docking node
+
+```bash
+ros2 run g3_visual_servo aruco_dock
+```
+
+State machine: `SEARCHING → LOCKING → TURN_TO_DOCK → DRIVE_TO_DOCK → DONE`
+
+The node prints its current state and cmd_vel values to the terminal. It stops automatically when docking is complete.
+
+## 5. (Optional) Visualise with Foxglove
+
+```bash
+foxnode   # alias for: ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+```
+
+Open Foxglove → connect `ws://localhost:8765` → add an **Image** panel on `/aruco_debug/image_raw` to see the detected marker and overlay.
+
+## Tunable constants ([aruco_dock_node.py](src/g3_visual_servo/g3_visual_servo/aruco_dock_node.py))
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `TARGET_MARKER` | `42` | ArUco ID to track |
+| `MARKER_SIZE` | `0.165` m | Physical marker side length |
+| `DOCK_DIST` | `0.50` m | Stop distance from marker |
+| `MAX_LINEAR` | `0.12` m/s | Maximum forward speed |
+| `MAX_ANGULAR` | `0.5` rad/s | Maximum turn speed |
+| `LOCK_N` | `8` | Pose samples before committing |
+
+---
+
+# Camera USB
+
+Turn it on using (no need to go into ssh mode)
+
+ros2 run usb_cam usb_cam_node_exe --ros-args \
+  -p video_device:="/dev/video1" \
+  -p pixel_format:="mjpeg2rgb" \
+  -p image_width:=640 \
+  -p image_height:=480 \
+  -p camera_name:="usb_cam" \
+  -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
+  -r image_raw:=/usb_cam/image_raw \
+  -r camera_info:=/usb_cam/camera_info
+  
