@@ -3,15 +3,29 @@ frontier_explorer:
     map_topic: /map
     global_frame: map
     robot_base_frame: base_link
-    occupied_threshold: 50
-    frontier_min_cluster_size: 10
+    occupied_threshold: 56
+    frontier_min_cluster_size: 8
     min_goal_distance: 0.8
-    frontier_region_resolution: 1.0
-    information_gain_radius: 1.25
-    min_information_gain_cells: 5
+    frontier_region_resolution: 0.5
+    information_gain_radius: 0.6
+    min_information_gain_cells: 2
+    frontier_window_radius_cells: 2
+    min_frontier_free_neighbors: 3
+    max_frontier_occupied_ratio: 0.45
+    min_reachable_unknown_cells: 3
+    min_frontier_unknown_span: 2
+    candidate_clearance_radius: 1
+    cluster_fail_limit: 3
+    cluster_blacklist_ttl_sec: 15.0
+    invalid_goal_blacklist_ttl_sec: 15.0
+    encapsulation_check_enabled: true
+    encapsulation_occupied_threshold: 45
+    encapsulation_confirmation_cycles: 3
+    encapsulation_max_unknown_holes: 2
+    encapsulation_max_unknown_hole_cells: 6
     planning_rate_hz: 1.0
     progress_rate_hz: 2.0
-    goal_timeout_sec: 120.0
-    blacklist_ttl_sec: 60.0
+    goal_timeout_sec: 15.0
+    blacklist_ttl_sec: 15.0
     completion_patience_cycles: 5
     autostart: false
