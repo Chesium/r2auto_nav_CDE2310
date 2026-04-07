@@ -15,7 +15,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import Bool, String, Int32
-from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, SetBool
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
 import time
@@ -149,6 +149,9 @@ class WarehouseMissionController(Node):
 
         # ========== SERVICE CLIENTS ==========
         self.fire_launcher_client = self.create_client(Trigger, "/fire_launcher")
+
+        # ========== SERVICE CLIENTS ==========
+        self._exploration_client = self.create_client(SetBool, '/exploration/set_enabled')
 
         # ========== ACTION CLIENTS ==========
         self.nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
@@ -312,6 +315,7 @@ class WarehouseMissionController(Node):
         # Wait for Nav2 to be ready
         if self.nav_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().info("Nav2 ready!")
+            self._set_exploration(True)
             self.transition_to(MissionState.EXPLORE)
         else:
             self.get_logger().warn("Nav2 not available, retrying...")
@@ -473,6 +477,14 @@ class WarehouseMissionController(Node):
     # ========================================
     # HELPER FUNCTIONS
     # ========================================
+
+    def _set_exploration(self, enabled: bool):
+        if not self._exploration_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn('Exploration service not available')
+            return
+        req = SetBool.Request()
+        req.data = enabled
+        self._exploration_client.call_async(req)
 
     def transition_to(self, new_state):
         """Transition to a new state"""
