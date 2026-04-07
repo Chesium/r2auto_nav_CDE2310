@@ -1,12 +1,18 @@
 """ArUco marker visual servoing for autonomous docking.
 
-State machine:
-  SEARCHING -> LOCKING -> STEP_SETTLE -> STEP_TURN / STEP_DRIVE -> STEP_SETTLE -> ... -> VERIFY -> DONE
+Supports two markers:
+  42 → Station A  (/station_a_pose)
+  67 → Station B  (/station_b_pose)
 
-Architecture: step-and-correct.
-  Execute a fixed-duration burst (turn or drive), stop, wait for robot to
-  physically settle, read PnP, decide next burst. Tolerates slow camera
-  framerates and cmd_vel actuation latency.
+Two modes:
+  Passive (default): scan frames continuously, publish the robot's map-frame
+    pose once per station when the marker is first locked.  No movement.
+  Active (triggered by /aruco_dock/dock_to_a or /aruco_dock/dock_to_b):
+    full step-and-correct approach to DOCK_DIST from the target marker, then
+    publish /aruco_dock/done = True and return to passive mode.
+
+State machine (active mode only):
+  SEARCHING -> LOCKING -> STEP_SETTLE -> STEP_TURN / STEP_DRIVE -> ... -> VERIFY -> DONE
 """
 
 import rclpy
@@ -19,28 +25,35 @@ import numpy as np
 from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import Twist, PoseStamped
+from std_msgs.msg import Bool
+from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
+import rclpy.time
 
+
+# --------------- marker → station mapping ---------------
+MARKER_STATION_MAP = {42: 'A', 67: 'B'}
 
 # --------------- tunables ---------------
 MARKER_SIZE   = 0.165
 DOCK_DIST     = 0.30
-TARGET_MARKER = 42
 
 LOCK_N              = 8
 BEARING_OUTLIER_DEG = 10.0
 
-STEP_LINEAR_SECS  = 0.4
-STEP_ANGULAR_SECS = 0.3
-STEP_LINEAR_VEL   = 0.08
-STEP_ANGULAR_VEL  = 0.25
-STEP_SETTLE_SECS  = 0.6
+STEP_LINEAR_SECS  = 1.0
+STEP_ANGULAR_SECS = 0.8
+STEP_LINEAR_VEL   = 0.10
+STEP_ANGULAR_VEL  = 0.30
+STEP_SETTLE_SECS  = 1.2
 
 APPROACH_DIST_TOL   = 0.06
 ALIGN_ANGLE_TOL_DEG = 5.0
 VERIFY_DIST_TOL     = 0.08
 
-ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
+ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
 
 MARKER_OBJECT_POINTS = np.array([
     [-MARKER_SIZE / 2,  MARKER_SIZE / 2, 0],
@@ -79,32 +92,93 @@ class ArucoDockNode(Node):
         self._dist_coeffs   = None
         self._state         = State.SEARCHING
 
+        # None = passive scan mode; int = marker ID currently being docked to
+        self._active_target_id  = None
+        # Stations whose map-frame pose has already been published (no duplicates)
+        self._passive_published = set()
+
         self._process_next            = False
         self._last_process_ns         = 0
         self._min_process_interval_ns = int(0.1 * 1e9)
 
-        self._detector_params = aruco.DetectorParameters()
+        self._detector_params = aruco.DetectorParameters_create()
 
-        self._lock_bearings  = []
-        self._lock_dists     = []
-        self._lock_headings  = []
-        self._lock_ticks     = 0
-        self._lock_committed = False
+        self._lock_bearings   = []
+        self._lock_dists      = []
+        self._lock_headings   = []
+        self._lock_ticks      = 0
+        self._lock_committed  = False
+        self._locked_marker_id = None  # which marker the current LOCKING run is tracking
 
         self._step_start_ns = 0
         self._lost_frames   = 0
 
+        # TF for passive station-pose publishing (robot map position at detection time)
+        self._tf_buffer   = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self)
+
+        # Subscribers
         self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self._camera_info_cb, 10)
         self.create_subscription(Image,      CAMERA_IMAGE_TOPIC, self._image_cb,       10)
 
-        self._debug_pub   = self.create_publisher(Image,        '/aruco_debug/image_raw', 10)
-        self._cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel',               10)
+        # Publishers
+        self._debug_pub   = self.create_publisher(Image,       '/aruco_debug/image_raw', 10)
+        self._cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel',               10)
+        self._done_pub    = self.create_publisher(Bool,         '/aruco_dock/done',        10)
+        # Latched QoS so subscribers that start after detection still receive the pose
+        _latched = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self._station_pose_pubs = {
+            'A': self.create_publisher(PoseStamped, '/station_a_pose', _latched),
+            'B': self.create_publisher(PoseStamped, '/station_b_pose', _latched),
+        }
+
+        # Services: mission controller calls these to activate docking
+        self.create_service(Trigger, '/aruco_dock/dock_to_a',  self._dock_to_a_cb)
+        self.create_service(Trigger, '/aruco_dock/dock_to_b',  self._dock_to_b_cb)
+        # Generic scan: wake node back to SEARCHING without targeting a specific marker
+        self.create_service(Trigger, '/aruco_dock/scan',       self._scan_cb)
 
         self.create_timer(1.0, self._tick)
 
         self.get_logger().info(
-            f'ArUco dock node started - looking for marker {TARGET_MARKER} '
-            f'on {CAMERA_IMAGE_TOPIC}')
+            f'ArUco dock node started — scanning for markers {list(MARKER_STATION_MAP.keys())}')
+
+    # =========================================================================
+    # SERVICE HANDLERS
+    # =========================================================================
+
+    def _dock_to_a_cb(self, request, response):
+        return self._activate_docking(42, response)
+
+    def _dock_to_b_cb(self, request, response):
+        return self._activate_docking(67, response)
+
+    def _scan_cb(self, request, response):
+        """Reset to SEARCHING with no specific target — detects any marker."""
+        self.get_logger().info('Scan activated — searching for any marker')
+        self._reset()
+        response.success = True
+        response.message = 'Scanning'
+        return response
+
+    def _activate_docking(self, marker_id, response):
+        station = MARKER_STATION_MAP[marker_id]
+        self.get_logger().info(
+            f'Docking activated for Station {station} (marker {marker_id})')
+        self._reset()
+        self._active_target_id = marker_id  # set AFTER reset so it isn't cleared
+        response.success = True
+        response.message = f'Docking activated for Station {station}'
+        return response
+
+    # =========================================================================
+    # TICK / RESET
+    # =========================================================================
 
     def _tick(self):
         if self._state == State.SEARCHING:
@@ -113,17 +187,33 @@ class ArucoDockNode(Node):
             self._lock_ticks += 1
             if self._lock_ticks >= 5 and len(self._lock_bearings) > 0:
                 self.get_logger().warn(
-                    f'LOCKING timeout - committing {len(self._lock_bearings)} samples.')
+                    f'LOCKING timeout — committing {len(self._lock_bearings)} samples.')
                 self._commit_lock()
+        elif self._state == State.FAILED:
+            self.get_logger().info('FAILED — resetting to SEARCHING in 2s...')
+            self.create_timer(2.0, self._reset_once)
+
+    def _reset_once(self):
+        """One-shot timer callback: reset and stop being called again."""
+        if self._state == State.FAILED:
+            saved_target = self._active_target_id
+            self._reset()
+            self._active_target_id = saved_target  # re-apply so active dock retries
 
     def _reset(self):
-        self._state          = State.SEARCHING
-        self._lock_bearings  = []
-        self._lock_dists     = []
-        self._lock_headings  = []
-        self._lock_ticks     = 0
-        self._lock_committed = False
-        self._lost_frames    = 0
+        self._state            = State.SEARCHING
+        self._lock_bearings    = []
+        self._lock_dists       = []
+        self._lock_headings    = []
+        self._lock_ticks       = 0
+        self._lock_committed   = False
+        self._locked_marker_id = None
+        self._active_target_id = None
+        self._lost_frames      = 0
+
+    # =========================================================================
+    # LOCK COMMIT
+    # =========================================================================
 
     def _commit_lock(self):
         if self._lock_committed:
@@ -133,19 +223,70 @@ class ArucoDockNode(Node):
         bearing = float(np.median(self._lock_bearings))
         dist    = float(np.median(self._lock_dists))
         heading = float(np.median(self._lock_headings))
+        station = MARKER_STATION_MAP.get(self._locked_marker_id, '?')
 
         self.get_logger().info(
-            f'Lock committed: bearing={np.degrees(bearing):+.1f}deg  '
-            f'dist={dist:.3f}m  heading={np.degrees(heading):+.1f}deg  -> STEP_SETTLE')
+            f'Lock committed [Station {station}]: '
+            f'bearing={np.degrees(bearing):+.1f}deg  '
+            f'dist={dist:.3f}m  heading={np.degrees(heading):+.1f}deg')
 
-        self._lost_frames   = 0
-        self._step_start_ns = self.get_clock().now().nanoseconds
-        self._state         = State.STEP_SETTLE
+        # Ignore markers for stations already completed
+        station = MARKER_STATION_MAP.get(self._locked_marker_id)
+        if station in self._passive_published:
+            self.get_logger().info(
+                f'Station {station} already visited — ignoring marker {self._locked_marker_id}')
+            self._reset()
+            return
+
+        # Publish station pose so MC can record which station was found
+        self._publish_station_pose(self._locked_marker_id)
+        # Always start docking immediately on lock
+        self._active_target_id = self._locked_marker_id
+        self._lost_frames      = 0
+        self._step_start_ns    = self.get_clock().now().nanoseconds
+        self._state            = State.STEP_SETTLE
+
+    # =========================================================================
+    # PASSIVE: STATION POSE PUBLISHER
+    # =========================================================================
+
+    def _publish_station_pose(self, marker_id):
+        station = MARKER_STATION_MAP.get(marker_id)
+        if station is None:
+            return
+        if station in self._passive_published:
+            return  # publish once per station per run
+
+        try:
+            tf_msg = self._tf_buffer.lookup_transform(
+                'map', 'base_link', rclpy.time.Time())
+        except (LookupException, ConnectivityException, ExtrapolationException) as exc:
+            self.get_logger().warn(
+                f'TF map→base_link unavailable, cannot publish Station {station} pose: {exc}')
+            return
+
+        pose = PoseStamped()
+        pose.header.frame_id = 'map'
+        pose.header.stamp    = self.get_clock().now().to_msg()
+        pose.pose.position.x = tf_msg.transform.translation.x
+        pose.pose.position.y = tf_msg.transform.translation.y
+        pose.pose.position.z = 0.0
+        pose.pose.orientation = tf_msg.transform.rotation
+
+        self._station_pose_pubs[station].publish(pose)
+        self._passive_published.add(station)
+        self.get_logger().info(
+            f'Published Station {station} pose: '
+            f'({pose.pose.position.x:.2f}, {pose.pose.position.y:.2f})')
+
+    # =========================================================================
+    # STEP CONTROL
+    # =========================================================================
 
     def _end_step(self):
         if self._state in (State.STEP_TURN, State.STEP_DRIVE):
             self._stop()
-            self.get_logger().info('Step done - settling.')
+            self.get_logger().info('Step done — settling.')
             self._step_start_ns = self.get_clock().now().nanoseconds
             self._state = State.STEP_SETTLE
 
@@ -159,6 +300,10 @@ class ArucoDockNode(Node):
         self._send_cmd(linear_x=STEP_LINEAR_VEL)
         self._state = State.STEP_DRIVE
         self.create_timer(STEP_LINEAR_SECS, lambda: self._end_step())
+
+    # =========================================================================
+    # CAMERA CALLBACKS
+    # =========================================================================
 
     def _camera_info_cb(self, msg):
         if self._camera_matrix is None:
@@ -192,7 +337,19 @@ class ArucoDockNode(Node):
 
         self._process_frame(frame, stamp=msg.header.stamp)
 
+    # =========================================================================
+    # DETECTION
+    # =========================================================================
+
     def _detect_marker(self, gray):
+        """Detect one marker from the target set.
+
+        Passive mode: looks for any marker in MARKER_STATION_MAP.
+        Active mode:  looks only for _active_target_id.
+
+        Returns (rvec, tvec, marker_id, corners, ids, rejected).
+        rvec/tvec/marker_id are None when no relevant marker is found.
+        """
         corners, ids, rejected = aruco.detectMarkers(
             gray, ARUCO_DICT, parameters=self._detector_params)
 
@@ -200,10 +357,14 @@ class ArucoDockNode(Node):
             f'detectMarkers: ids={ids.flatten().tolist() if ids is not None else None}')
 
         if ids is None:
-            return None, None, corners, ids, rejected
+            return None, None, None, corners, ids, rejected
+
+        targets = ({self._active_target_id}
+                   if self._active_target_id is not None
+                   else set(MARKER_STATION_MAP.keys()))
 
         for i, mid in enumerate(ids.flatten()):
-            if mid != TARGET_MARKER:
+            if mid not in targets:
                 continue
             image_points = corners[i][0].astype(np.float32)
             retval, rvecs, tvecs, _ = cv2.solvePnPGeneric(
@@ -218,15 +379,19 @@ class ArucoDockNode(Node):
                 if t[2, 0] > 0:
                     rvec, tvec = r, t
                     break
-            return rvec, tvec, corners, ids, rejected
+            return rvec, tvec, int(mid), corners, ids, rejected
 
-        return None, None, corners, ids, rejected
+        return None, None, None, corners, ids, rejected
+
+    # =========================================================================
+    # FRAME PROCESSING
+    # =========================================================================
 
     def _process_frame(self, frame, stamp=None):
         gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         debug = frame.copy()
 
-        rvec, tvec, corners, ids, rejected = self._detect_marker(gray)
+        rvec, tvec, detected_id, corners, ids, rejected = self._detect_marker(gray)
 
         if ids is not None:
             aruco.drawDetectedMarkers(debug, corners, ids)
@@ -240,31 +405,40 @@ class ArucoDockNode(Node):
             cv2.drawFrameAxes(
                 debug, self._camera_matrix, self._dist_coeffs,
                 rvec, tvec, MARKER_SIZE * 0.5)
-            t    = tvec.flatten()
-            dist = float(np.linalg.norm(t))
-            hdg  = _heading_from_rvec(rvec)
+            t       = tvec.flatten()
+            dist    = float(np.linalg.norm(t))
+            hdg     = _heading_from_rvec(rvec)
+            station = MARKER_STATION_MAP.get(detected_id, '?')
             cv2.putText(debug,
-                f'dist={dist:.2f}m hdg={np.degrees(hdg):+.1f}deg',
+                f'Stn {station} dist={dist:.2f}m hdg={np.degrees(hdg):+.1f}deg',
                 (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-        cv2.putText(debug, f'State: {self._state.name}',
+        mode_str = (f'Active-{MARKER_STATION_MAP.get(self._active_target_id, "?")} '
+                    f'(mk{self._active_target_id})'
+                    if self._active_target_id is not None else 'Passive')
+        cv2.putText(debug, f'State: {self._state.name} [{mode_str}]',
             (5, debug.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
+        # ── SEARCHING ────────────────────────────────────────────────────────
         if self._state == State.SEARCHING:
             if rvec is None:
                 self.get_logger().info('No marker detected.')
                 self._publish_debug(debug, stamp)
                 return
-            self.get_logger().info('Marker found - beginning LOCKING.')
-            self._lock_bearings  = []
-            self._lock_dists     = []
-            self._lock_headings  = []
-            self._lock_ticks     = 0
-            self._lock_committed = False
-            self._state          = State.LOCKING
+            station = MARKER_STATION_MAP.get(detected_id, '?')
+            self.get_logger().info(
+                f'Marker {detected_id} (Station {station}) found — beginning LOCKING.')
+            self._lock_bearings    = []
+            self._lock_dists       = []
+            self._lock_headings    = []
+            self._lock_ticks       = 0
+            self._lock_committed   = False
+            self._locked_marker_id = detected_id
+            self._state            = State.LOCKING
 
+        # ── LOCKING ──────────────────────────────────────────────────────────
         if self._state == State.LOCKING:
-            if rvec is not None:
+            if rvec is not None and detected_id == self._locked_marker_id:
                 R_mat, _ = cv2.Rodrigues(rvec)
                 dock_offset = DOCK_DIST * R_mat[:, 2].flatten() + tvec.flatten()
                 dock_lat    = float(dock_offset[0])
@@ -303,10 +477,12 @@ class ArucoDockNode(Node):
             self._publish_debug(debug, stamp)
             return
 
+        # ── STEP_TURN / STEP_DRIVE ───────────────────────────────────────────
         if self._state in (State.STEP_TURN, State.STEP_DRIVE):
             self._publish_debug(debug, stamp)
             return
 
+        # ── STEP_SETTLE ──────────────────────────────────────────────────────
         if self._state == State.STEP_SETTLE:
             now_ns  = self.get_clock().now().nanoseconds
             elapsed = (now_ns - self._step_start_ns) / 1e9
@@ -319,7 +495,7 @@ class ArucoDockNode(Node):
                 self.get_logger().warn(
                     f'STEP_SETTLE: no marker ({self._lost_frames}/5)')
                 if self._lost_frames >= 5:
-                    self.get_logger().error('Cannot see marker - aborting.')
+                    self.get_logger().error('Cannot see marker — aborting.')
                     self._state = State.FAILED
                 self._publish_debug(debug, stamp)
                 return
@@ -334,7 +510,7 @@ class ArucoDockNode(Node):
                 f'SETTLE read: dist={dist:.3f}m  bearing={np.degrees(bearing):+.1f}deg')
 
             if dist <= DOCK_DIST + APPROACH_DIST_TOL:
-                self.get_logger().info('Within dock distance -> VERIFY.')
+                self.get_logger().info('Within dock distance → VERIFY.')
                 self._state = State.VERIFY
                 self._publish_debug(debug, stamp)
                 return
@@ -349,9 +525,10 @@ class ArucoDockNode(Node):
             self._publish_debug(debug, stamp)
             return
 
+        # ── VERIFY ───────────────────────────────────────────────────────────
         if self._state == State.VERIFY:
             if rvec is None:
-                self.get_logger().warn('VERIFY: no marker - resetting.')
+                self.get_logger().warn('VERIFY: no marker — resetting.')
                 self._reset()
                 self._publish_debug(debug, stamp)
                 return
@@ -362,11 +539,17 @@ class ArucoDockNode(Node):
 
             if abs(dist - DOCK_DIST) <= VERIFY_DIST_TOL:
                 self._stop()
-                self.get_logger().info('Docking VERIFIED - DONE.')
+                station = MARKER_STATION_MAP.get(self._active_target_id, '?')
+                self.get_logger().info(f'Docking VERIFIED — DONE (Station {station}).')
                 self._state = State.DONE
+                done_msg      = Bool()
+                done_msg.data = True
+                self._done_pub.publish(done_msg)
+                # Stay in DONE — do not auto-reset.
+                # MC will call /aruco_dock/dock_to_a or dock_to_b for the next station.
             else:
                 self.get_logger().warn(
-                    f'VERIFY failed (dist={dist:.3f}m) - resetting.')
+                    f'VERIFY failed (dist={dist:.3f}m) — resetting.')
                 self._reset()
 
             self._publish_debug(debug, stamp)
@@ -374,12 +557,14 @@ class ArucoDockNode(Node):
 
         self._publish_debug(debug, stamp)
 
+    # =========================================================================
+    # HELPERS
+    # =========================================================================
+
     def _send_cmd(self, linear_x=0.0, angular_z=0.0):
-        cmd = TwistStamped()
-        cmd.header.stamp    = self.get_clock().now().to_msg()
-        cmd.header.frame_id = 'base_link'
-        cmd.twist.linear.x  = linear_x
-        cmd.twist.angular.z = angular_z
+        cmd = Twist()
+        cmd.linear.x  = linear_x
+        cmd.angular.z = angular_z
         self._cmd_vel_pub.publish(cmd)
         if linear_x != 0.0 or angular_z != 0.0:
             self.get_logger().info(

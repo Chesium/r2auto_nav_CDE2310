@@ -40,9 +40,11 @@ class MissionState:
     INIT          = "INIT"
     EXPLORE       = "EXPLORE"
     NAVIGATE_TO_A = "NAVIGATE_TO_A"
+    DOCK_AT_A     = "DOCK_AT_A"
     ALIGN_AT_A    = "ALIGN_AT_A"
     FIRE_AT_A     = "FIRE_AT_A"
     NAVIGATE_TO_B = "NAVIGATE_TO_B"
+    DOCK_AT_B     = "DOCK_AT_B"
     ALIGN_AT_B    = "ALIGN_AT_B"
     FIRE_AT_B     = "FIRE_AT_B"
     COMPLETE      = "COMPLETE"
@@ -75,6 +77,9 @@ class WarehouseMissionController(Node):
 
         # ── Station B completion flag (from station_b_aligner) ──────────
         self.station_b_done = False
+
+        # ── ArUco dock completion flag ───────────────────────────────────
+        self.aruco_dock_done = False
 
         # ── Launcher state (Station A only) ─────────────────────────────
         self.launcher_ready           = True
@@ -116,6 +121,9 @@ class WarehouseMissionController(Node):
         # From launcher node: status string
         self.create_subscription(String, "/launcher_status", self.launcher_callback, 10)
 
+        # From aruco_dock_node: docking complete signal
+        self.create_subscription(Bool, "/aruco_dock/done", self.aruco_dock_done_callback, 10)
+
         # From exploration node: map closure signal
         self.create_subscription(Bool, "/exploration_complete", self.exploration_callback, 10)
 
@@ -125,8 +133,11 @@ class WarehouseMissionController(Node):
         # Emergency stop only
         self.cmd_vel_pub = self.create_publisher(Twist,  "/cmd_vel",       10)
 
-        # ── Service client: /fire_launcher (Station A only) ─────────────
+        # ── Service clients ──────────────────────────────────────────────
         self.fire_launcher_client = self.create_client(Trigger, "/fire_launcher")
+        self.dock_to_a_client     = self.create_client(Trigger, "/aruco_dock/dock_to_a")
+        self.dock_to_b_client     = self.create_client(Trigger, "/aruco_dock/dock_to_b")
+        self.dock_scan_client     = self.create_client(Trigger, "/aruco_dock/scan")
 
         # ── Nav2 ────────────────────────────────────────────────────────
         self.nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
@@ -144,18 +155,24 @@ class WarehouseMissionController(Node):
     # =========================================================================
 
     def station_a_callback(self, msg):
-        """ArUco node found Station A — store pose."""
+        """aruco_dock_node detected Station A — store pose and begin docking."""
         if not self.stations["A"]["found"]:
             self.stations["A"]["pose"]  = msg
             self.stations["A"]["found"] = True
-            self.get_logger().info("✓ Station A pose received")
+            self.get_logger().info("✓ Station A detected — transitioning to DOCK_AT_A")
+            if self.state == MissionState.EXPLORE:
+                self.aruco_dock_done = False
+                self.transition_to(MissionState.DOCK_AT_A)
 
     def station_b_callback(self, msg):
-        """ArUco node found Station B — store pose."""
+        """aruco_dock_node detected Station B — store pose and begin docking."""
         if not self.stations["B"]["found"]:
             self.stations["B"]["pose"]  = msg
             self.stations["B"]["found"] = True
-            self.get_logger().info("✓ Station B pose received")
+            self.get_logger().info("✓ Station B detected — transitioning to DOCK_AT_B")
+            if self.state == MissionState.EXPLORE:
+                self.aruco_dock_done = False
+                self.transition_to(MissionState.DOCK_AT_B)
 
     def offset_callback(self, msg):
         """Pixel offset from station_a_aligner — store for logging only.
@@ -166,6 +183,12 @@ class WarehouseMissionController(Node):
         """Geometric alignment status from station_a_aligner."""
         self.is_aligned = msg.data
         # No cmd_vel published here — aligner handles stopping itself when aligned.
+
+    def aruco_dock_done_callback(self, msg):
+        """aruco_dock_node signals docking approach complete."""
+        if msg.data and not self.aruco_dock_done:
+            self.aruco_dock_done = True
+            self.get_logger().info("✓ ArUco docking complete")
 
     def b_done_callback(self, msg):
         """Station B aligner signals all 3 balls fired."""
@@ -212,9 +235,11 @@ class WarehouseMissionController(Node):
         if   self.state == MissionState.INIT:          self.handle_init()
         elif self.state == MissionState.EXPLORE:        self.handle_explore()
         elif self.state == MissionState.NAVIGATE_TO_A:  self.handle_navigate("A")
+        elif self.state == MissionState.DOCK_AT_A:      self.handle_dock("A")
         elif self.state == MissionState.ALIGN_AT_A:     self.handle_alignment("A")
         elif self.state == MissionState.FIRE_AT_A:      self.handle_firing_a()
         elif self.state == MissionState.NAVIGATE_TO_B:  self.handle_navigate("B")
+        elif self.state == MissionState.DOCK_AT_B:      self.handle_dock("B")
         elif self.state == MissionState.ALIGN_AT_B:     self.handle_alignment_b()
         elif self.state == MissionState.FIRE_AT_B:      self.handle_firing_b()
         elif self.state == MissionState.COMPLETE:       self.handle_complete()
@@ -257,12 +282,23 @@ class WarehouseMissionController(Node):
 
         success = self.nav_succeeded; self.nav_succeeded = None
         if success:
-            self.get_logger().info(f"Arrived at Station {sid}")
-            self.transition_to(MissionState.ALIGN_AT_A if sid == "A"
-                               else MissionState.ALIGN_AT_B)
+            self.get_logger().info(f"Arrived at Station {sid} — starting ArUco dock")
+            self.transition_to(MissionState.DOCK_AT_A if sid == "A"
+                               else MissionState.DOCK_AT_B)
         else:
             self.get_logger().error(f"Nav2 failed for Station {sid}")
             self.handle_failure(sid)
+
+    def handle_dock(self, sid):
+        """
+        aruco_dock_node already started docking when it published the station pose.
+        FSM just waits for /aruco_dock/done = True then hands off to the aligner.
+        """
+        if self.aruco_dock_done:
+            self.aruco_dock_done = False
+            self.get_logger().info(f"ArUco dock complete — transitioning to ALIGN at Station {sid}")
+            self.transition_to(MissionState.ALIGN_AT_A if sid == "A"
+                               else MissionState.ALIGN_AT_B)
 
     def handle_alignment(self, sid):
         """
@@ -385,11 +421,23 @@ class WarehouseMissionController(Node):
 
         other = "B" if sid == "A" else "A"
         if self.stations[other]["found"] and not self.stations[other]["delivered"]:
-            self.transition_to(MissionState.NAVIGATE_TO_A if other == "A"
-                               else MissionState.NAVIGATE_TO_B)
+            # Activate aruco_dock for the other station (it is idle in DONE)
+            self.aruco_dock_done = False
+            client = self.dock_to_a_client if other == "A" else self.dock_to_b_client
+            if client.wait_for_service(timeout_sec=0.0):
+                future = client.call_async(Trigger.Request())
+                future.add_done_callback(lambda f: self.get_logger().info(
+                    f"Dock activated for Station {other}: {f.result().message}"))
+            else:
+                self.get_logger().warn(f"aruco_dock service unavailable for Station {other}")
+            self.transition_to(MissionState.DOCK_AT_A if other == "A"
+                               else MissionState.DOCK_AT_B)
         elif self.stations[other]["delivered"]:
             self.transition_to(MissionState.COMPLETE)
         else:
+            # Other station not found yet — wake aruco to scan for it
+            if self.dock_scan_client.wait_for_service(timeout_sec=0.0):
+                self.dock_scan_client.call_async(Trigger.Request())
             self.transition_to(MissionState.EXPLORE)
 
     def handle_failure(self, sid):

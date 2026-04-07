@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mission_controller = g3_mission_control.mission_controller:main',
+            'mission_controller_stub = g3_mission_control.mission_controller_stub:main',
         ],
     },
 )
