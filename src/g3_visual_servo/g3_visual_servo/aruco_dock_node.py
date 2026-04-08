@@ -297,7 +297,8 @@ class ArucoDockNode(Node):
     def _camera_info_cb(self, msg):
         if self._camera_matrix is None:
             self._camera_matrix = np.array(msg.k, dtype=np.float64).reshape(3, 3)
-            self._dist_coeffs   = np.array(msg.d, dtype=np.float64)
+            d = np.array(msg.d, dtype=np.float64)
+            self._dist_coeffs = d if d.size > 0 else np.zeros(5, dtype=np.float64)
             self.get_logger().info('Camera intrinsics received.')
 
     def _image_cb(self, msg):
