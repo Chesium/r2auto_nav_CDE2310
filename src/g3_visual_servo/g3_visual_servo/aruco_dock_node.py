@@ -266,6 +266,8 @@ class ArucoDockNode(Node):
         if self._state == State.SCANNING:
             if rvec is not None:
                 self._scan_confirm += 1
+                self.get_logger().info(
+                    f'SCANNING: marker {detected_id} confirm={self._scan_confirm}/{SCAN_CONFIRM_FRAMES}')
                 if self._scan_confirm >= SCAN_CONFIRM_FRAMES:
                     self._publish_station_pose(detected_id)
                     if self._active_target_id is not None:
@@ -325,6 +327,10 @@ class ArucoDockNode(Node):
                 else:
                     linear_x = 0.0
 
+                self.get_logger().info(
+                    f'APPROACHING: d={self._distance_ema:.3f}m '
+                    f'b={np.degrees(self._bearing_ema):+.1f}deg '
+                    f'cmd=({linear_x:.3f}, {angular_z:.3f})')
                 self._send_cmd(linear_x, angular_z)
 
                 cv2.putText(debug, f'err d={dist_err:+.3f}m b={np.degrees(self._bearing_ema):+.1f}deg',
