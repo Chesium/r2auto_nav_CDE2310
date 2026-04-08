@@ -323,13 +323,15 @@ class ArucoDockNode(Node):
                     return
 
                 # PI control
-                angular_z = float(np.clip(-KP_ANGULAR * self._bearing_ema,
+                # Camera is rear-mounted: negate angular (mirror bearing)
+                # and drive backward (negative linear)
+                angular_z = float(np.clip(KP_ANGULAR * self._bearing_ema,
                                           -MAX_ANGULAR, MAX_ANGULAR))
 
                 if abs(self._bearing_ema) < MAX_BEARING_FOR_DRIVE and dist_err > 0:
                     linear_x = float(np.clip(
-                        KP_LINEAR * dist_err + KI_LINEAR * self._integral,
-                        0.0, MAX_LINEAR))
+                        -(KP_LINEAR * dist_err + KI_LINEAR * self._integral),
+                        -MAX_LINEAR, 0.0))
                 else:
                     linear_x = 0.0
 
