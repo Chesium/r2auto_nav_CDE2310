@@ -190,7 +190,9 @@ class ArucoDockNode(Node):
     # ── detection ────────────────────────────────────────────────────────────
 
     def _detect_marker(self, gray):
+        # OpenCV 4.6 segfaults on non-contiguous arrays
         gray = np.ascontiguousarray(gray)
+
         corners, ids, rejected = aruco.detectMarkers(
             gray, self._aruco_dict, parameters=self._detector_params)
 
@@ -201,22 +203,31 @@ class ArucoDockNode(Node):
                    if self._active_target_id is not None
                    else set(MARKER_STATION_MAP.keys()))
 
+        # Ensure contiguous float64 arrays for solvePnP (OpenCV 4.6 segfault fix)
+        cam_mtx = np.ascontiguousarray(self._camera_matrix, dtype=np.float64)
+        dist_co = np.ascontiguousarray(self._dist_coeffs, dtype=np.float64)
+
         for i, mid in enumerate(ids.flatten()):
             if mid not in targets:
                 continue
-            image_points = corners[i][0].astype(np.float32)
-            retval, rvecs, tvecs, _ = cv2.solvePnPGeneric(
-                MARKER_OBJECT_POINTS, image_points,
-                self._camera_matrix, self._dist_coeffs,
-                flags=cv2.SOLVEPNP_IPPE_SQUARE,
-            )
-            if not retval or len(rvecs) == 0:
+            image_points = np.ascontiguousarray(
+                corners[i][0], dtype=np.float64)
+            obj_points = np.ascontiguousarray(
+                MARKER_OBJECT_POINTS, dtype=np.float64)
+            try:
+                retval, rvec_single, tvec_single = cv2.solvePnP(
+                    obj_points, image_points, cam_mtx, dist_co,
+                    flags=cv2.SOLVEPNP_IPPE_SQUARE,
+                )
+            except cv2.error:
                 continue
-            rvec, tvec = rvecs[0], tvecs[0]
-            for r, t in zip(rvecs, tvecs):
-                if t[2, 0] > 0:
-                    rvec, tvec = r, t
-                    break
+            if not retval:
+                continue
+            tvec = tvec_single.reshape(3, 1)
+            rvec = rvec_single.reshape(3, 1)
+            # If marker is behind camera, skip
+            if tvec[2, 0] <= 0:
+                continue
             return rvec, tvec, int(mid), corners, ids, rejected
 
         return None, None, None, corners, ids, rejected
