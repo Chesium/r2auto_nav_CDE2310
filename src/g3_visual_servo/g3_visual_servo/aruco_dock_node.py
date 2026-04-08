@@ -266,10 +266,13 @@ class ArucoDockNode(Node):
         if self._state == State.SCANNING:
             if rvec is not None:
                 self._scan_confirm += 1
-                self.get_logger().info(
-                    f'SCANNING: marker {detected_id} confirm={self._scan_confirm}/{SCAN_CONFIRM_FRAMES}')
                 if self._scan_confirm >= SCAN_CONFIRM_FRAMES:
+                    # Try to publish station pose (best-effort, doesn't block docking)
                     self._publish_station_pose(detected_id)
+
+                    self.get_logger().info(
+                        f'SCAN confirmed: active_target={self._active_target_id} '
+                        f'detected={detected_id}')
                     if self._active_target_id is not None:
                         self.get_logger().info(
                             f'Marker {detected_id} confirmed — APPROACHING')
@@ -279,6 +282,9 @@ class ArucoDockNode(Node):
                         self._distance_ema = float(np.linalg.norm(t))
                         self._integral     = 0.0
                         self._lost_count   = 0
+                    else:
+                        # Passive mode — keep scanning but don't re-confirm this marker
+                        self._scan_confirm = 0
             else:
                 self._scan_confirm = 0
 
