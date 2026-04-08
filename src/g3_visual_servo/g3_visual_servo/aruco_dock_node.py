@@ -191,10 +191,18 @@ class ArucoDockNode(Node):
 
     def _detect_marker(self, gray):
         # OpenCV 4.6 segfaults on non-contiguous arrays
-        gray = np.ascontiguousarray(gray)
+        gray = np.ascontiguousarray(gray, dtype=np.uint8)
+
+        import sys
+        print(f'[DBG] detectMarkers: shape={gray.shape} dtype={gray.dtype} '
+              f'contiguous={gray.flags["C_CONTIGUOUS"]}', flush=True)
+        sys.stdout.flush()
 
         corners, ids, rejected = aruco.detectMarkers(
             gray, self._aruco_dict, parameters=self._detector_params)
+
+        print(f'[DBG] detectMarkers done: ids={ids}', flush=True)
+        sys.stdout.flush()
 
         if ids is None:
             return None, None, None, corners, ids, rejected
@@ -215,6 +223,10 @@ class ArucoDockNode(Node):
             obj_points = np.ascontiguousarray(
                 MARKER_OBJECT_POINTS, dtype=np.float64)
             try:
+                print(f'[DBG] solvePnP: obj={obj_points.shape}/{obj_points.dtype} '
+                      f'img={image_points.shape}/{image_points.dtype} '
+                      f'cam={cam_mtx.shape}/{cam_mtx.dtype} '
+                      f'dist={dist_co.shape}/{dist_co.dtype}', flush=True)
                 retval, rvec_single, tvec_single = cv2.solvePnP(
                     obj_points, image_points, cam_mtx, dist_co,
                     flags=cv2.SOLVEPNP_IPPE_SQUARE,
