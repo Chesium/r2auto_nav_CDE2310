@@ -388,5 +388,21 @@
       </link>
     </model>
 
+    <!-- ArUco marker 42 (Station A): south face of mid_wall_left, NW quadrant -->
+    <!-- Rotated 90deg around Z so thin face points in +-Y (visible from south) -->
+    <include>
+      <uri>model://aruco_marker_42</uri>
+      <name>aruco_marker_42</name>
+      <pose>-7 -0.103 0.107 0 0 1.5708</pose>
+    </include>
+
+    <!-- ArUco marker 67 (Station B): north face of mid_wall_right, SE quadrant -->
+    <!-- Rotated 90deg around Z so thin face points in +-Y (visible from north) -->
+    <include>
+      <uri>model://aruco_marker_67</uri>
+      <name>aruco_marker_67</name>
+      <pose>7 0.103 0.107 0 0 1.5708</pose>
+    </include>
+
   </world>
 </sdf>
