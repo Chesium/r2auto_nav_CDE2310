@@ -24,7 +24,7 @@ import numpy as np
 from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, TwistStamped, PoseStamped
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
@@ -116,7 +116,7 @@ class ArucoDockNode(Node):
         self.create_subscription(Image,      CAMERA_IMAGE_TOPIC, self._image_cb,       10)
 
         self._debug_pub   = self.create_publisher(Image, '/aruco_debug/image_raw', 10)
-        self._cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel',               10)
+        self._cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel',         10)
         self._done_pub    = self.create_publisher(Bool,  '/aruco_dock/done',        10)
 
         _latched = QoSProfile(
@@ -384,9 +384,11 @@ class ArucoDockNode(Node):
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _send_cmd(self, linear_x=0.0, angular_z=0.0):
-        cmd = Twist()
-        cmd.linear.x  = linear_x
-        cmd.angular.z = angular_z
+        cmd = TwistStamped()
+        cmd.header.stamp    = self.get_clock().now().to_msg()
+        cmd.header.frame_id = 'base_link'
+        cmd.twist.linear.x  = linear_x
+        cmd.twist.angular.z = angular_z
         self._cmd_vel_pub.publish(cmd)
 
     def _stop(self):
