@@ -97,8 +97,8 @@ class ArucoDockNode(Node):
         self._last_process_ns         = 0
         self._min_process_interval_ns = int(0.1 * 1e9)
 
-        # Keep dict and params as instance variables — module-level OpenCV objects
-        # can corrupt on Debian OpenCV 4.6 when passed into C extensions
+        # FIX 1: instance variables, not module-level globals — prevents
+        # OpenCV 4.6 Debian C extension corruption
         self._aruco_dict      = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
         self._detector_params = aruco.DetectorParameters()
 
@@ -297,6 +297,7 @@ class ArucoDockNode(Node):
     def _camera_info_cb(self, msg):
         if self._camera_matrix is None:
             self._camera_matrix = np.array(msg.k, dtype=np.float64).reshape(3, 3)
+            # FIX 2: some cameras publish empty D array; solvePnP segfaults on it
             d = np.array(msg.d, dtype=np.float64)
             self._dist_coeffs = d if d.size > 0 else np.zeros(5, dtype=np.float64)
             self.get_logger().info('Camera intrinsics received.')
@@ -337,6 +338,10 @@ class ArucoDockNode(Node):
         Returns (rvec, tvec, marker_id, corners, ids, rejected).
         rvec/tvec/marker_id are None when no relevant marker is found.
         """
+        # FIX 3: cv_bridge can return non-contiguous arrays; passing one into
+        # the aruco C extension on OpenCV 4.6 causes a segfault
+        gray = np.ascontiguousarray(gray)
+
         corners, ids, rejected = aruco.detectMarkers(
             gray, self._aruco_dict, parameters=self._detector_params)
 
