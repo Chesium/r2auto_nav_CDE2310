@@ -101,7 +101,7 @@ class ArucoDockNode(Node):
         self._last_process_ns         = 0
         self._min_process_interval_ns = int(0.1 * 1e9)
 
-        self._detector_params = aruco.DetectorParameters_create()
+        self._detector_params = aruco.DetectorParameters()
 
         self._lock_bearings   = []
         self._lock_dists      = []
