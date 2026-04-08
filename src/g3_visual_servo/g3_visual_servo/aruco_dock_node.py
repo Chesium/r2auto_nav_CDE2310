@@ -89,9 +89,14 @@ class ArucoDockNode(Node):
         self._camera_matrix = None
         self._dist_coeffs   = None
 
-        # Instance-level to avoid OpenCV 4.6 C extension corruption
-        self._aruco_dict      = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
-        self._detector_params = aruco.DetectorParameters()
+        # OpenCV 4.6 (Debian): Dictionary_get + DetectorParameters_create
+        # OpenCV 4.7+: getPredefinedDictionary + DetectorParameters()
+        if hasattr(aruco, 'Dictionary_get'):
+            self._aruco_dict      = aruco.Dictionary_get(aruco.DICT_4X4_100)
+            self._detector_params = aruco.DetectorParameters_create()
+        else:
+            self._aruco_dict      = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
+            self._detector_params = aruco.DetectorParameters()
 
         self._state            = State.SCANNING
         self._active_target_id = None
