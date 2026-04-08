@@ -322,16 +322,14 @@ class ArucoDockNode(Node):
                     self._publish_debug(debug, stamp)
                     return
 
-                # PI control — rear-mounted camera
-                # Always drive backward; steer gently while reversing
-                # so the camera keeps the marker in view
-                angular_z = float(np.clip(KP_ANGULAR * self._bearing_ema,
+                # PI control — front-mounted camera
+                angular_z = float(np.clip(-KP_ANGULAR * self._bearing_ema,
                                           -MAX_ANGULAR, MAX_ANGULAR))
 
-                if dist_err > 0:
+                if abs(self._bearing_ema) < MAX_BEARING_FOR_DRIVE and dist_err > 0:
                     linear_x = float(np.clip(
-                        -(KP_LINEAR * dist_err + KI_LINEAR * self._integral),
-                        -MAX_LINEAR, 0.0))
+                        KP_LINEAR * dist_err + KI_LINEAR * self._integral,
+                        0.0, MAX_LINEAR))
                 else:
                     linear_x = 0.0
 
