@@ -698,17 +698,24 @@ class WarehouseMissionController(Node):
 
 
 def main(args=None):
+    import subprocess
     rclpy.init(args=args)
     controller = WarehouseMissionController()
 
     try:
         rclpy.spin(controller)
     except KeyboardInterrupt:
-        pass
+        subprocess.run(
+            ['ros2', 'service', 'call', '/exploration/set_enabled',
+             'std_srvs/srv/SetBool', '{data: false}'],
+            timeout=3.0
+        )
     finally:
-        controller.get_logger().info("Shutting down mission controller")
         controller.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
