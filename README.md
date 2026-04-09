@@ -405,6 +405,22 @@ note: run the nav 2 startup command (down-left) after the cartographer output st
 after you can see the costmap layers in the RViz interface,
 send the "start exploration" command in tmux A (down-right)
 
+### Run Mission Controller
+
+After the `g3nav2` tmux session is fully up, run in a new terminal, frontier exploration starts:
+
+```bash
+ros2 run g3_mission_control mission_controller
+```
+
+To skip straight to a specific FSM state (e.g. for testing):
+
+```bash
+ros2 run g3_mission_control mission_controller_2 --ros-args -p initial_state:=ALIGN_AT_A
+```
+
+Valid `initial_state` values: `INIT`, `EXPLORE`, `NAVIGATE_TO_A`, `ALIGN_AT_A`, `FIRE_AT_A`, `NAVIGATE_TO_B`, `ALIGN_AT_B`, `FIRE_AT_B`, `COMPLETE`.
+
 # ArUco Visual Servo Docking
 
 Autonomous docking onto a 4×4 ArUco marker (ID 42, 16.5 cm) using the USB camera.
