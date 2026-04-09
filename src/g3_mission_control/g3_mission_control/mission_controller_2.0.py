@@ -57,7 +57,15 @@ class WarehouseMissionController(Node):
         super().__init__("mission_controller")
 
         # ── FSM state ───────────────────────────────────────────────────
-        self.state = MissionState.INIT
+        self.declare_parameter("initial_state", "INIT")
+        initial_state_str = self.get_parameter("initial_state").value
+        try:
+            self.state = MissionState[initial_state_str]
+        except KeyError:
+            self.get_logger().warn(
+                f"Unknown initial_state '{initial_state_str}', defaulting to INIT"
+            )
+            self.state = MissionState.INIT
 
         # ── Station tracking ────────────────────────────────────────────
         self.stations = {
