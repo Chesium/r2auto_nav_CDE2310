@@ -24,8 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'station_a_aligner = g3_aligner.station_a_aligner:main'
-            'station_b_aligner = g3_aligner.station_b_aligner:main'
+            'station_a_aligner = g3_aligner.station_a_aligner:main',
+            'station_b_aligner = g3_aligner.station_b_aligner:main',
         ],
     },
 )

@@ -60,8 +60,8 @@ class WarehouseMissionController(Node):
         self.declare_parameter("initial_state", "INIT")
         initial_state_str = self.get_parameter("initial_state").value
         try:
-            self.state = MissionState[initial_state_str]
-        except KeyError:
+            self.state = getattr(MissionState, initial_state_str)
+        except AttributeError:
             self.get_logger().warn(
                 f"Unknown initial_state '{initial_state_str}', defaulting to INIT"
             )
@@ -323,10 +323,8 @@ class WarehouseMissionController(Node):
             self.alignment_start_time = None
             self.handle_failure(sid); return
 
-        if self.receptacle_offset == self.receptacle_not_detected and elapsed > 3.0:
-            self.get_logger().warn(f"No circle detected at Station {sid} after 3s")
-            self.alignment_start_time = None
-            self.handle_failure(sid); return
+        if self.receptacle_offset == self.receptacle_not_detected and elapsed > 3.0 and elapsed % 5.0 < 0.1:
+            self.get_logger().warn(f"No circle detected at Station {sid} — still waiting...")
 
         if self.is_aligned:
             self.get_logger().info(f"✓ Aligned at Station {sid}")
