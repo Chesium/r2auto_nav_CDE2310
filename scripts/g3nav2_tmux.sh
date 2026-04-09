@@ -41,8 +41,8 @@ tmux select-layout -t "$SESSION:bringup" tiled
 # label each pane
 tmux select-pane -t "$SESSION:bringup.0" -T "Cartographer"
 tmux select-pane -t "$SESSION:bringup.1" -T "RViz"
-tmux select-pane -t "$SESSION:bringup.2" -T "Nav2"
-tmux select-pane -t "$SESSION:bringup.3" -T "Exploration"
+tmux select-pane -t "$SESSION:bringup.2" -T "Exploration"
+tmux select-pane -t "$SESSION:bringup.3" -T "Nav2"
 
 send_cmd() {
   local target="$1"
@@ -59,8 +59,8 @@ send_cmd() {
 
 send_cmd "$SESSION:bringup.0" "Pane A - Cartographer" "$CMD_A"
 send_cmd "$SESSION:bringup.1" "Pane B - RViz" "$CMD_B"
-send_cmd "$SESSION:bringup.3" "Pane D - Exploration" "$CMD_C"
-send_cmd "$SESSION:bringup.2" "Pane C - Nav2" "$CMD_D"
+send_cmd "$SESSION:bringup.2" "Pane C - Exploration" "$CMD_C"
+send_cmd "$SESSION:bringup.3" "Pane D - Nav2" "$CMD_D"
 
 
 tmux attach -t "$SESSION"
