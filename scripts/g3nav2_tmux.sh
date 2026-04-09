@@ -14,8 +14,8 @@ SETUP_CMD="source $WS/install/setup.bash"
 
 CMD_A="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False use_frontier:=False"
 CMD_B="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True use_frontier:=False"
-CMD_C="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False use_frontier:=False"
-CMD_D="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False  use_rviz:=False use_frontier:=True"
+CMD_C="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False  use_rviz:=False use_frontier:=True"
+CMD_D="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False use_frontier:=False"
 # -----------------------------------
 
 # whether to auto-run commands:
@@ -59,7 +59,8 @@ send_cmd() {
 
 send_cmd "$SESSION:bringup.0" "Pane A - Cartographer" "$CMD_A"
 send_cmd "$SESSION:bringup.1" "Pane B - RViz" "$CMD_B"
-send_cmd "$SESSION:bringup.2" "Pane C - Nav2" "$CMD_C"
-send_cmd "$SESSION:bringup.3" "Pane D - Exploration" "$CMD_D"
+send_cmd "$SESSION:bringup.3" "Pane D - Exploration" "$CMD_C"
+send_cmd "$SESSION:bringup.2" "Pane C - Nav2" "$CMD_D"
+
 
 tmux attach -t "$SESSION"
