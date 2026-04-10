@@ -246,9 +246,11 @@ class HoughDetectorStationA(Node):
             if resp.success:
                 self.get_logger().info("[ALIGN] FSM notified ✓")
             else:
-                self.get_logger().warn(f"[ALIGN] FSM rejected: {resp.message}")
+                self.get_logger().warn(f"[ALIGN] FSM rejected: {resp.message} — will retry")
+                self.notified = False   # allow retry once FSM reaches ALIGN_AT_A
         except Exception as e:
             self.get_logger().error(f"[ALIGN] Service error: {e}")
+            self.notified = False   # allow retry on error
 
     # ── Circle detection ───────────────────────────────────────────────────────
     def _detect_circle(self, frame):
