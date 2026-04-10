@@ -15,8 +15,8 @@ Key Changes from Previous Version:
 
 Topic/Service Contracts:
   From station_a_aligner.py:
-    /receptacle/aligned    Bool   — FSM uses to transition ALIGN_AT_A → FIRE_AT_A
-    /receptacle/offset     Int32  — logged only, no P-control in FSM
+    /receptacle/offset          Int32   — logged only
+    /receptacle/notify_aligned  Trigger — service called once when stably aligned
   From station_b_aligner.py:
     /receptacle/b_done     Bool   — FSM uses to complete Station B delivery
   To launcher (std_srvs Trigger):
@@ -76,12 +76,12 @@ class WarehouseMissionController(Node):
         self.exploration_complete = False
 
         # ── Alignment state (from station_a_aligner) ────────────────────
-        # FSM reads these but does NOT publish cmd_vel — aligner owns it.
+        # FSM reads offset for logging only. Alignment transition driven by service call.
         self.receptacle_not_detected = 9999
         self.receptacle_offset       = self.receptacle_not_detected
-        self.is_aligned              = False
         self.alignment_timeout       = 15.0
         self.alignment_start_time    = None
+        self.notify_aligned_received = False
 
         # ── Station B completion flag (from station_b_aligner) ──────────
         self.station_b_done = False
@@ -119,9 +119,11 @@ class WarehouseMissionController(Node):
         self.create_subscription(PoseStamped, "/station_a_pose", self.station_a_callback, 10)
         self.create_subscription(PoseStamped, "/station_b_pose", self.station_b_callback, 10)
 
-        # From station_a_aligner: geometric alignment (used to transition to FIRE_AT_A)
+        # From station_a_aligner: offset for logging only
         self.create_subscription(Int32, "/receptacle/offset", self.offset_callback, 10)
-        self.create_subscription(Bool,  "/receptacle/aligned", self.alignment_callback, 10)
+
+        # Service server: station_a_aligner calls this once when stably aligned
+        self.create_service(Trigger, "/receptacle/notify_aligned", self.notify_aligned_handler)
 
         # From station_b_aligner: all-done signal (used to complete Station B delivery)
         self.create_subscription(Bool, "/receptacle/b_done", self.b_done_callback, 10)
@@ -187,10 +189,19 @@ class WarehouseMissionController(Node):
         FSM does NOT publish cmd_vel here. Aligner owns cmd_vel."""
         self.receptacle_offset = msg.data
 
-    def alignment_callback(self, msg):
-        """Geometric alignment status from station_a_aligner."""
-        self.is_aligned = msg.data
-        # No cmd_vel published here — aligner handles stopping itself when aligned.
+    def notify_aligned_handler(self, _request, response):
+        """station_a_aligner calls this once when stably aligned."""
+        if self.state == MissionState.ALIGN_AT_A:
+            self.notify_aligned_received = True
+            self.get_logger().info("✓ Alignment notification received — transitioning to FIRE_AT_A")
+            response.success = True
+            response.message = "Alignment accepted"
+        else:
+            self.get_logger().warn(
+                f"Alignment notify received in wrong state: {self.state}")
+            response.success = False
+            response.message = f"Wrong state: {self.state}"
+        return response
 
     def aruco_dock_done_callback(self, msg):
         """aruco_dock_node signals docking approach complete."""
@@ -326,8 +337,8 @@ class WarehouseMissionController(Node):
         if self.receptacle_offset == self.receptacle_not_detected and elapsed > 3.0 and elapsed % 5.0 < 0.1:
             self.get_logger().warn(f"No circle detected at Station {sid} — still waiting...")
 
-        if self.is_aligned:
-            self.get_logger().info(f"✓ Aligned at Station {sid}")
+        if self.notify_aligned_received:
+            self.notify_aligned_received = False
             self.alignment_start_time = None
             self.transition_to(MissionState.FIRE_AT_A if sid == "A"
                                else MissionState.FIRE_AT_B)

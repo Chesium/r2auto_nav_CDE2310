@@ -21,6 +21,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from sensor_msgs.msg import Image, CompressedImage
 from std_msgs.msg import Int32, Bool
 from geometry_msgs.msg import Twist
+from std_srvs.srv import Trigger
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
@@ -35,7 +36,10 @@ class HoughDetectorStationA(Node):
         # offset > 0 (tin right of centre) → forward; offset < 0 → backward.
         self.KP_LINEAR      = 0.002   # px → m/s gain
         self.MAX_LINEAR_VEL = 0.08    # m/s cap
-        self.ALIGN_THRESHOLD = 15     # pixels — within this = aligned
+        self.ALIGN_THRESHOLD    = 15  # pixels — within this = aligned
+        self.ALIGN_STABLE_FRAMES = 20  # consecutive aligned frames before notifying FSM
+        self.align_stable_count  = 0
+        self.notified            = False  # fire service call only once per alignment
 
         # ── Hough params ─────────────────────────────────────────────────
         self.DP       = 1.2
@@ -79,11 +83,13 @@ class HoughDetectorStationA(Node):
 
         # ── Publishers ────────────────────────────────────────────────────
         self.pub_offset    = self.create_publisher(Int32,  "/receptacle/offset",    10)
-        self.pub_aligned   = self.create_publisher(Bool,   "/receptacle/aligned",   10)
         self.pub_tin_ready = self.create_publisher(Bool,   "/receptacle/tin_ready", 10)
         self.pub_annotated = self.create_publisher(Image,  "/receptacle/annotated", 10)
         # cmd_vel: this node owns it during alignment (linear only, no angular)
         self.pub_cmd_vel   = self.create_publisher(Twist,  "/cmd_vel",              10)
+
+        # Service client: notify FSM once when stably aligned
+        self.notify_client = self.create_client(Trigger, "/receptacle/notify_aligned")
 
         self.get_logger().info("=" * 60)
         self.get_logger().info("STATION A ALIGNER — linear P-control, FSM fires")
@@ -146,9 +152,19 @@ class HoughDetectorStationA(Node):
             cmd.angular.z = 0.0
 
             offset_msg.data    = offset_x
-            aligned_msg.data   = is_aligned
-            # Station A: tin_ready = aligned (FSM uses this as fire gate)
             tin_ready_msg.data = is_aligned
+
+            # Stable frame debounce — call service once when threshold reached
+            if is_aligned:
+                self.align_stable_count += 1
+            else:
+                self.align_stable_count = 0
+
+            if self.align_stable_count >= self.ALIGN_STABLE_FRAMES and not self.notified:
+                self.notified = True
+                self.get_logger().info(
+                    f"✓ Stably aligned ({self.ALIGN_STABLE_FRAMES} frames) — notifying FSM")
+                self._call_notify_service()
 
             # Annotate debug frame
             direction = "FWD" if offset_x > 0 else "BWD"
@@ -171,7 +187,6 @@ class HoughDetectorStationA(Node):
         # Publish — this node owns cmd_vel during alignment
         self.pub_cmd_vel.publish(cmd)
         self.pub_offset.publish(offset_msg)
-        self.pub_aligned.publish(aligned_msg)
         self.pub_tin_ready.publish(tin_ready_msg)
 
         try:
@@ -180,6 +195,25 @@ class HoughDetectorStationA(Node):
             self.pub_annotated.publish(ann)
         except Exception:
             pass
+
+    # ── Notify FSM of stable alignment ───────────────────────────────────────
+    def _call_notify_service(self):
+        if not self.notify_client.wait_for_service(timeout_sec=0.0):
+            self.get_logger().warn("[ALIGN] /receptacle/notify_aligned not available — will retry")
+            self.notified = False  # allow retry next frame
+            return
+        future = self.notify_client.call_async(Trigger.Request())
+        future.add_done_callback(self._notify_cb)
+
+    def _notify_cb(self, future):
+        try:
+            resp = future.result()
+            if resp.success:
+                self.get_logger().info("[ALIGN] FSM notified successfully")
+            else:
+                self.get_logger().warn(f"[ALIGN] FSM rejected notify: {resp.message}")
+        except Exception as e:
+            self.get_logger().error(f"[ALIGN] Notify service error: {e}")
 
     # ── Circle detection ──────────────────────────────────────────────────────
     def _detect_circle(self, frame):
