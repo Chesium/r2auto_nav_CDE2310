@@ -60,12 +60,12 @@ class HoughDetectorStationA(Node):
         self.DP       = 1.2
         self.MIN_DIST = 100
         self.PARAM1   = 50
-        self.PARAM2   = 25
+        self.PARAM2   = 35
         self.MIN_R    = 55   
         self.MAX_R    = 75
 
         # ── Temporal filter ────────────────────────────────────────────────
-        self.CONFIRM_FRAMES   = 4
+        self.CONFIRM_FRAMES   = 6
         self.consecutive_hits = 0
         self.confirmed        = False
         self.was_confirmed    = False   # for instant NO DETECT log on transition
