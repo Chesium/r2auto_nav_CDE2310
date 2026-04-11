@@ -68,19 +68,19 @@ class StationBAligner(Node):
         # ── Hough params ──────────────────────────────────────────────────
         self.DP       = 1.2
         self.MIN_DIST = 100
-        self.PARAM1   = 50
-        self.PARAM2   = 25
-        self.MIN_R    = 40
-        self.MAX_R    = 60
+        self.PARAM1   = 35
+        self.PARAM2   = 30
+        self.MIN_R    = 55
+        self.MAX_R    = 75
 
         # ── Temporal filter (circle detection) ────────────────────────────
-        self.CONFIRM_FRAMES   = 3
+        self.CONFIRM_FRAMES   = 6
         self.consecutive_hits = 0
         self.confirmed        = False
         self.was_confirmed    = False
 
         # ── EMA smoother on cy (Y-axis) ──────────────────────────────────
-        self.EMA_ALPHA = 0.50
+        self.EMA_ALPHA = 0.35
         self.ema_cy    = None
 
         # ── Phase 2: HSV blue-LED detection ──────────────────────────────
