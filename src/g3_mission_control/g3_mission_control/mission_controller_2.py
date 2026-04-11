@@ -99,8 +99,8 @@ class WarehouseMissionController(Node):
 
         # Station A timing delays (seconds after each ball)
         # TA will specify exact delays in week 7 — update these values.
-        self.declare_parameter("station_a_delay_after_ball_1", 4.7)
-        self.declare_parameter("station_a_delay_after_ball_2", 0.7)
+        self.declare_parameter("station_a_delay_after_ball_1", 4.8)
+        self.declare_parameter("station_a_delay_after_ball_2", 0.8)
         self.declare_parameter("station_a_delay_after_ball_3", 0.0)
         self.station_a_delays = {
             0: float(self.get_parameter("station_a_delay_after_ball_1").value),
@@ -218,8 +218,9 @@ class WarehouseMissionController(Node):
     def launcher_callback(self, msg):
         """Launcher status: idle | firing | complete | error.
         Used for Station A firing sequence only."""
+        prev_status = self.launcher_status
         self.launcher_status = msg.data
-        if self.launcher_status == "complete":
+        if self.launcher_status == "complete" and prev_status != "complete":
             self.launcher_ready = True
             self.balls_fired   += 1
             self.get_logger().info(
