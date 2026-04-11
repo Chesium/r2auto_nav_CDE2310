@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'g3_mission_control'
+package_name = 'g3_aligner'
 
 setup(
     name=package_name,
@@ -13,8 +13,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ros',
-    maintainer_email='chengxi03@gmail.com',
+    maintainer='chesium',
+    maintainer_email='chesium@hotmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
@@ -24,9 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'mission_controller = g3_mission_control.mission_controller:main',
-            'mission_controller_2 = g3_mission_control.mission_controller_2:main',
-            'mission_controller_stub = g3_mission_control.mission_controller_stub:main',
+            'station_a_aligner = g3_aligner.station_a_aligner:main',
+            'station_b_aligner = g3_aligner.station_b_aligner:main',
         ],
     },
 )

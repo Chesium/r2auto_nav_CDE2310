@@ -10,7 +10,7 @@ from std_srvs.srv import Trigger
 
 # Import the UART servo SDK (bundled inside this package under uart_sdk/)
 from .uart_sdk.uart_servo import UartServoManager
-from .uart_sdk.data_table import MOTOR_MODE_DC, DC_DIR_CW
+from .uart_sdk.data_table import MOTOR_MODE_DC, MOTOR_MODE_SERVO, DC_DIR_CW
 
 # --- Hardware config ---
 SERVO_PORT = '/dev/ttyUSB0'  # USB serial port the servo is connected to
@@ -18,6 +18,7 @@ SERVO_BAUD = 115200          # Must match servo's configured baud rate
 SERVO_ID = 1                 # ID of the launcher servo on the bus
 FIRE_DURATION = 2.2          # How long (seconds) to spin the motor per ball
 HOME_POSITION = 2048         # Midpoint (0-4095) to return to after each shot
+INIT_POSITION = 4000         # Position to move to on startup before switching to DC mode
 
 
 class BallLauncherNode(Node):
@@ -108,7 +109,15 @@ class BallLauncherNode(Node):
                 exclusive=True,
             )
             uservo = UartServoManager(uart, servo_id_list=[self.servo_id])
-            # Must set servo mode first before switching to DC mode.
+            if uservo.servo_info_dict.get(self.servo_id, None) and uservo.servo_info_dict[self.servo_id].is_online:
+                self.get_logger().info(f'Servo ID {self.servo_id} detected and online.')
+            else:
+                self.get_logger().warn(f'Servo ID {self.servo_id} did not respond to ping.')
+            # Explicitly set servo mode and move to init position before switching to DC mode.
+            uservo.set_motor_mode(self.servo_id, MOTOR_MODE_SERVO)
+            time.sleep(0.1)
+            uservo.set_position(self.servo_id, INIT_POSITION)
+            time.sleep(2.5)  # worst case ~2.2s for full revolution; 2.5s gives margin
             uservo.set_motor_mode(self.servo_id, MOTOR_MODE_DC)
             time.sleep(0.1)
             uservo.torque_enable(self.servo_id, True)
