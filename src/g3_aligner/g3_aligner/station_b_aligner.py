@@ -62,7 +62,7 @@ class StationBAligner(Node):
         self.KP_LINEAR           = 0.002
         self.MAX_LINEAR_VEL      = 0.08
         self.ALIGN_THRESHOLD     = 15      # pixels on Y-axis
-        self.ALIGN_STABLE_FRAMES = 20      # consecutive aligned frames before locking
+        self.ALIGN_STABLE_FRAMES = 5       # consecutive aligned frames before locking
         self.align_stable_count  = 0
 
         # ── Hough params ──────────────────────────────────────────────────
@@ -88,7 +88,7 @@ class StationBAligner(Node):
         self.LED_S_LOW  = 100;  self.LED_S_HIGH = 255
         self.LED_V_LOW  = 100;  self.LED_V_HIGH = 255
         self.LED_PIXEL_RATIO_THRESH = 0.05   # fraction of circle area
-        self.LED_CONFIRM_FRAMES     = 3
+        self.LED_CONFIRM_FRAMES     = 10
         self.led_consecutive_hits   = 0
         self.led_detected           = False
         self.prev_led_detected      = False
