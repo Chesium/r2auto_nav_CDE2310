@@ -10,7 +10,7 @@ from std_srvs.srv import Trigger
 
 # Import the UART servo SDK (bundled inside this package under uart_sdk/)
 from .uart_sdk.uart_servo import UartServoManager
-from .uart_sdk.data_table import MOTOR_MODE_DC, MOTOR_MODE_SERVO, DC_DIR_CW
+from .uart_sdk.data_table import MOTOR_MODE_DC, MOTOR_MODE_SERVO, DC_DIR_CW, DC_DIR_CCW
 
 # --- Hardware config ---
 SERVO_PORT = '/dev/ttyUSB0'  # USB serial port the servo is connected to
@@ -113,16 +113,19 @@ class BallLauncherNode(Node):
                 self.get_logger().info(f'Servo ID {self.servo_id} detected and online.')
             else:
                 self.get_logger().warn(f'Servo ID {self.servo_id} did not respond to ping.')
-            # Explicitly set servo mode and move to init position before switching to DC mode.
-            uservo.set_motor_mode(self.servo_id, MOTOR_MODE_SERVO)
-            time.sleep(0.1)
-            uservo.set_position(self.servo_id, INIT_POSITION)
-            time.sleep(2.5)  # worst case ~2.2s for full revolution; 2.5s gives margin
+            # Mechanical constraint: servo must only rotate CW to reach init position.
+            # Use DC mode to spin CW and poll CURRENT_POSITION until we hit INIT_POSITION.
             uservo.set_motor_mode(self.servo_id, MOTOR_MODE_DC)
             time.sleep(0.1)
             uservo.torque_enable(self.servo_id, True)
             time.sleep(0.1)
-            # Force PWM to zero in case a previous run left the motor spinning.
+            uservo.dc_rotate(self.servo_id, DC_DIR_CW, 30)  # slow CW spin
+            t_start = time.time()
+            while time.time() - t_start < 3.0:  # max 3s to find init pos
+                pos = uservo.read_data_by_name(self.servo_id, "CURRENT_POSITION")
+                if pos is not None and abs(pos - INIT_POSITION) < 30:
+                    break
+                time.sleep(0.02)
             uservo.dc_stop(self.servo_id)
         except serial.SerialException as exc:
             self._handle_serial_failure(exc, 'Unable to initialize launcher serial link')
