@@ -59,7 +59,7 @@ class StationBAligner(Node):
         super().__init__("station_b_aligner")
 
         # ── Phase 1: Linear P-control (Y-axis, camera rotated 90°) ────────
-        self.KP_LINEAR           = 0.002
+        self.KP_LINEAR           = 0.0015
         self.MAX_LINEAR_VEL      = 0.08
         self.ALIGN_THRESHOLD     = 15      # pixels on Y-axis
         self.ALIGN_STABLE_FRAMES = 5       # consecutive aligned frames before locking
@@ -68,19 +68,19 @@ class StationBAligner(Node):
         # ── Hough params ──────────────────────────────────────────────────
         self.DP       = 1.2
         self.MIN_DIST = 100
-        self.PARAM1   = 35
-        self.PARAM2   = 30
-        self.MIN_R    = 55
-        self.MAX_R    = 75
+        self.PARAM1   = 50
+        self.PARAM2   = 45
+        self.MIN_R    = 80
+        self.MAX_R    = 130
 
         # ── Temporal filter (circle detection) ────────────────────────────
-        self.CONFIRM_FRAMES   = 6
+        self.CONFIRM_FRAMES   = 5
         self.consecutive_hits = 0
         self.confirmed        = False
         self.was_confirmed    = False
 
         # ── EMA smoother on cy (Y-axis) ──────────────────────────────────
-        self.EMA_ALPHA = 0.35
+        self.EMA_ALPHA = 0.20
         self.ema_cy    = None
 
         # ── Phase 2: HSV blue-LED detection ──────────────────────────────
