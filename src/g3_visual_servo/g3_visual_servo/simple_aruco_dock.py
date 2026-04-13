@@ -106,7 +106,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("dictionary", "DICT_4X4_100")
         self.declare_parameter("dock_distance", 0.30)
         self.declare_parameter("dist_tolerance", 0.04)
-        self.declare_parameter("camera_forward_offset", 0.0)
+        self.declare_parameter("camera_forward_offset", 0.08)
         self.declare_parameter("bearing_tolerance_deg", 3.0)
         self.declare_parameter("dwell_frames", 5)
         self.declare_parameter("approach_timeout", 300.0)
@@ -186,6 +186,7 @@ class SimpleArucoDock(Node):
         self._odom_x: float | None = None
         self._odom_y: float | None = None
         self._post_turn_target_yaw: float | None = None
+        self._post_turn_angle: float = 0.0
         self._post_turn_timer = None
         self._post_shift_target_dist: float | None = None
         self._post_shift_start_x: float | None = None
@@ -461,8 +462,11 @@ class SimpleArucoDock(Node):
         self._send_cmd(0.0, 0.0)
         self._state = _State.DONE if success else _State.FAILED
         self._done_pub.publish(Bool(data=success))
-        level = self.get_logger().info if success else self.get_logger().warn
-        level(f"Docking {'DONE' if success else 'FAILED'}: {reason}")
+        msg = f"Docking {'DONE' if success else 'FAILED'}: {reason}"
+        if success:
+            self.get_logger().info(msg)
+        else:
+            self.get_logger().warning(msg)
         if success:
             self._start_post_turn()
 
@@ -493,7 +497,7 @@ class SimpleArucoDock(Node):
         if self._post_turn_speed <= 0.0:
             return
         if self._odom_yaw is None or self._normal_yaw is None:
-            self.get_logger().warn("Skipping post-dock turn: missing odom yaw or marker normal")
+            self.get_logger().warning("Skipping post-dock turn: missing odom yaw or marker normal")
             return
         # Compute turn in camera frame: how much CCW rotation brings the
         # marker normal (n) to the desired target angle, then apply the same
@@ -508,6 +512,7 @@ class SimpleArucoDock(Node):
         angle = _ccw_angle(_angle_0_2pi(n), _angle_0_2pi(target_n))
         if angle < self._post_turn_min_angle:
             return
+        self._post_turn_angle = angle
         self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + angle)
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
@@ -555,15 +560,25 @@ class SimpleArucoDock(Node):
         if self._post_shift_speed <= 0.0:
             return
         if self._last_lateral_offset is None:
-            self.get_logger().warn("Skipping post-dock shift: no lateral offset available")
+            self.get_logger().warning("Skipping post-dock shift: no lateral offset available")
             return
         if self._odom_x is None or self._odom_y is None:
-            self.get_logger().warn("Skipping post-dock shift: no odom position received yet")
+            self.get_logger().warning("Skipping post-dock shift: no odom position received yet")
             return
-        # After a 90 deg left turn, moving forward follows the wall tangent.
-        # Lateral offset in camera x maps approximately to the opposite signed
-        # motion along that tangent.
-        self._post_shift_target_dist = -self._last_lateral_offset
+        # The camera is cam_forward_offset (r) ahead of the pivot point.
+        # After turning by angle `a` (CCW), the camera sweeps an arc and
+        # its projection along the new forward direction shifts.  The exact
+        # shift needed to re-align the camera with the marker is:
+        #
+        #   shift = -x * sin(a) - r * (1 - cos(a))
+        #
+        # where x = last_lateral_offset, a = CCW turn angle, r = cam offset.
+        # For 90° CW (a=270°): shift =  x - r
+        # For 90° CCW (a=90°): shift = -x - r
+        a = self._post_turn_angle
+        x = self._last_lateral_offset
+        r = self._cam_forward_offset
+        self._post_shift_target_dist = -x * math.sin(a) - r * (1.0 - math.cos(a))
         if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
             self._post_shift_target_dist = None
             return
@@ -573,7 +588,8 @@ class SimpleArucoDock(Node):
         if self._post_shift_timer is None:
             self._post_shift_timer = self.create_timer(0.02, self._post_shift_step)
         self.get_logger().info(
-            f"Post-dock shift: x={self._last_lateral_offset:+.3f}m "
+            f"Post-dock shift: x={x:+.3f}m r={r:.3f}m "
+            f"a={math.degrees(a):.0f}deg "
             f"move={self._post_shift_target_dist:+.3f}m"
         )
 
