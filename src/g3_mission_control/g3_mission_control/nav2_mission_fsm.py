@@ -149,10 +149,15 @@ class Nav2MissionFSM(Node):
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         yaw = math.atan2(siny_cosp, cosy_cosp)
 
-        # Use the camera-reported Z distance to estimate how far the marker is
+        # Use the camera-reported Z distance to estimate how far the marker is.
+        # Cap at 3.0m so the staging pose (dock + staging_x_offset) stays
+        # inside the local costmap even when the marker is first spotted
+        # from far away.  The docking_server refines with live detection
+        # once it reaches the staging point, so precision here doesn't matter.
         marker_dist = msg.pose.position.z  # Z = forward in camera optical frame
         if marker_dist <= 0.0:
             marker_dist = 1.5  # fallback
+        marker_dist = min(marker_dist, 3.0)
 
         # Project dock position in map frame: robot pos + distance along heading
         dock_x = rx + marker_dist * math.cos(yaw)
