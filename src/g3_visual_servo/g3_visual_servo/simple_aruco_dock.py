@@ -120,7 +120,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("lost_hold", 3)
         self.declare_parameter("lost_stop", 10)
         self.declare_parameter("use_stamped_cmd_vel", False)
-        self.declare_parameter("final_heading_offset_deg", 90.0)
+        self.declare_parameter("final_heading_offset_deg", -90.0)
         self.declare_parameter("post_turn_speed", 0.12)
         self.declare_parameter("post_turn_kp", 0.5)
         self.declare_parameter("post_turn_min_angle_deg", 1.0)
@@ -495,19 +495,25 @@ class SimpleArucoDock(Node):
         if self._odom_yaw is None or self._normal_yaw is None:
             self.get_logger().warn("Skipping post-dock turn: missing odom yaw or marker normal")
             return
-        # Wall normal in odom frame = robot heading + marker normal in camera frame.
-        # Wall tangent (parallel to wall) = wall normal + final_heading_offset (default 90°).
-        wall_normal_odom = self._odom_yaw + self._normal_yaw
-        target_yaw = _wrap_angle(wall_normal_odom + self._final_heading_offset)
-        angle = _ccw_angle(_angle_0_2pi(self._odom_yaw), _angle_0_2pi(target_yaw))
+        # Compute turn in camera frame: how much CCW rotation brings the
+        # marker normal (n) to the desired target angle, then apply the same
+        # rotation to odom_yaw.  This works because the camera is fixed on
+        # the robot.
+        #
+        # final_heading_offset_deg sets the target angle for n in camera frame:
+        #   -90  → wall ends up on your left  (270° CCW = 90° CW)
+        #    90  → wall ends up on your right (90° CCW)
+        n = self._normal_yaw
+        target_n = self._final_heading_offset
+        angle = _ccw_angle(_angle_0_2pi(n), _angle_0_2pi(target_n))
         if angle < self._post_turn_min_angle:
             return
-        self._post_turn_target_yaw = target_yaw
+        self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + angle)
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
         self.get_logger().info(
-            f"Post-dock turn: wall_normal_odom={math.degrees(wall_normal_odom):+.1f}deg "
-            f"offset={math.degrees(self._final_heading_offset):+.1f}deg "
+            f"Post-dock turn: n={math.degrees(n):+.1f}deg "
+            f"target_n={math.degrees(target_n):+.1f}deg "
             f"ccw={math.degrees(angle):.1f}deg "
             f"target_yaw={math.degrees(self._post_turn_target_yaw):+.1f}deg"
         )
