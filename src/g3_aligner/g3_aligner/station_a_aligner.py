@@ -62,7 +62,7 @@ class HoughDetectorStationA(Node):
         self.PARAM1   = 50
         self.PARAM2   = 45
         self.MIN_R    = 80
-        self.MAX_R    = 130
+        self.MAX_R    = 150
 
         # ── Temporal filter ────────────────────────────────────────────────
         self.CONFIRM_FRAMES   = 5
