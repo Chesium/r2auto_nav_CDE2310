@@ -20,8 +20,8 @@ import rclpy
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist, TwistStamped
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import Bool, String
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image
+from std_msgs.msg import Bool, Float32, Int32, String
 from std_srvs.srv import Trigger
 
 
@@ -144,7 +144,13 @@ class SimpleArucoDock(Node):
         self._cmd_pub = self.create_publisher(cmd_type, "/cmd_vel", 10)
         self._done_pub = self.create_publisher(Bool, "/aruco_dock/done", 10)
         self._debug_pub = self.create_publisher(String, "/aruco_debug", 10)
-        self._debug_img_pub = self.create_publisher(Image, "/aruco_debug/image_raw", 10)
+        self._debug_img_pub = self.create_publisher(CompressedImage, "/aruco_debug/image_raw/compressed", 10)
+
+        # Passive detection — always publishes when marker is visible, even in IDLE
+        # FSM subscribes to these to know when to call /simple_dock/start
+        self._marker_visible_pub = self.create_publisher(Bool, "/aruco_dock/marker_visible", 10)
+        self._marker_id_pub = self.create_publisher(Int32, "/aruco_dock/marker_id", 10)
+        self._marker_distance_pub = self.create_publisher(Float32, "/aruco_dock/marker_distance", 10)
 
         self.create_service(Trigger, "/simple_dock/start", self._start_cb)
         self.create_service(Trigger, "/simple_dock/stop", self._stop_cb)
@@ -192,14 +198,30 @@ class SimpleArucoDock(Node):
         self.get_logger().info("Camera intrinsics received.")
 
     def _image_cb(self, msg: Image) -> None:
-        if self._cam_mtx is None or self._state != _State.APPROACHING:
+        if self._cam_mtx is None:
             return
         try:
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as e:
             self.get_logger().error(f"cv_bridge: {e}")
             return
-        self._process_frame(frame)
+
+        # Always run detection for passive scanning
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        result = self._detect(gray)
+
+        # Publish passive detection info (FSM reads these)
+        if result is not None:
+            _, distance_raw, _, _, _, _ = result
+            self._marker_visible_pub.publish(Bool(data=True))
+            self._marker_id_pub.publish(Int32(data=self._target_id))
+            self._marker_distance_pub.publish(Float32(data=float(distance_raw)))
+        else:
+            self._marker_visible_pub.publish(Bool(data=False))
+
+        # Only run control loop when actively docking
+        if self._state == _State.APPROACHING:
+            self._process_frame_with_result(frame, result)
 
     # ── detection ────────────────────────────────────────────────────────
 
@@ -236,9 +258,7 @@ class SimpleArucoDock(Node):
 
     # ── main loop ────────────────────────────────────────────────────────
 
-    def _process_frame(self, frame: np.ndarray) -> None:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        result = self._detect(gray)
+    def _process_frame_with_result(self, frame: np.ndarray, result) -> None:
         debug_frame = frame.copy()
 
         # Timeout check
@@ -292,7 +312,7 @@ class SimpleArucoDock(Node):
                 self._debug_pub.publish(String(data=dbg))
                 cv2.putText(debug_frame, f"HOLDING d={self._distance_ema:.2f}m dwell={self._dwell_count}/{self._dwell_frames}",
                             (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                self._debug_img_pub.publish(self._bridge.cv2_to_imgmsg(debug_frame, encoding="bgr8"))
+                self._publish_debug_image(debug_frame)
                 return
 
             # Integral (distance only, only accumulate when far)
@@ -347,7 +367,7 @@ class SimpleArucoDock(Node):
                         (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         # Publish debug image
-        self._debug_img_pub.publish(self._bridge.cv2_to_imgmsg(debug_frame, encoding="bgr8"))
+        self._publish_debug_image(debug_frame)
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -357,6 +377,14 @@ class SimpleArucoDock(Node):
         self._done_pub.publish(Bool(data=success))
         level = self.get_logger().info if success else self.get_logger().warn
         level(f"Docking {'DONE' if success else 'FAILED'}: {reason}")
+
+    def _publish_debug_image(self, frame: np.ndarray) -> None:
+        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        msg = CompressedImage()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.format = "jpeg"
+        msg.data = buf.tobytes()
+        self._debug_img_pub.publish(msg)
 
     def _send_cmd(self, linear_x: float, angular_z: float) -> None:
         if self._use_stamped:
