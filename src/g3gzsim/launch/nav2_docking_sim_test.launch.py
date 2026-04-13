@@ -6,12 +6,13 @@ TurtleBot3 facing the marker, runs Nav2's tb3_simulation_launch with SLAM
 enabled (so docking_server comes up active), bridges the camera, and
 starts the aruco_dock_pose_publisher so /detected_dock_pose is populated.
 
-Deliberately NOT included:
-    - frontier_exploration (we're testing docking in isolation)
-    - mission_controller, simple_mission_fsm, aruco_dock_node (old flow)
-    - Any other mission-level nodes
+Launch arguments:
+    use_fsm  (default true)   Also launch frontier_explorer + nav2_mission_fsm
+                               so the full explore→detect→dock flow runs
+                               automatically.  Set false to test docking in
+                               isolation with a manual action goal.
 
-Manual test trigger after launch:
+Manual test trigger (when use_fsm:=false):
     ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{
       use_dock_id: false,
       dock_pose: {header: {frame_id: 'map'}, pose: {position: {x: 2.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}},
@@ -29,6 +30,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     SetEnvironmentVariable,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -49,6 +51,7 @@ def generate_launch_description() -> LaunchDescription:
 
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
+    use_fsm = LaunchConfiguration("use_fsm")
     world_file = LaunchConfiguration("world")
     x_pose = LaunchConfiguration("x_pose")
     y_pose = LaunchConfiguration("y_pose")
@@ -106,6 +109,17 @@ def generate_launch_description() -> LaunchDescription:
             "use_rviz",
             default_value="True",
             description="Launch RViz.",
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
+            "use_fsm",
+            default_value="true",
+            description=(
+                "Launch frontier_explorer + nav2_mission_fsm for the full "
+                "explore→detect→dock flow.  Set false to test docking in "
+                "isolation with a manual action goal."
+            ),
         )
     )
     ld.add_action(
@@ -184,5 +198,45 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     ld.add_action(aruco_pose_publisher)
+
+    # ── Optional: frontier explorer + nav2 mission FSM ───────────────────
+    g3g_frontier_dir = get_package_share_directory("g3g_frontier_exploration")
+    frontier_params_file = os.path.join(
+        g3g_frontier_dir, "config", "frontier_exploration.yaml"
+    )
+
+    frontier_explorer = Node(
+        package="g3g_frontier_exploration",
+        executable="frontier_explorer",
+        name="frontier_explorer",
+        output="screen",
+        condition=IfCondition(use_fsm),
+        parameters=[
+            frontier_params_file,
+            {
+                "use_sim_time": True,
+                "autostart": False,  # FSM enables it
+            },
+        ],
+    )
+
+    nav2_mission_fsm = Node(
+        package="g3_mission_control",
+        executable="nav2_mission_fsm",
+        name="nav2_mission_fsm",
+        output="screen",
+        condition=IfCondition(use_fsm),
+        parameters=[
+            {
+                "use_sim_time": True,
+                "dock_pose_topic": "/detected_dock_pose",
+                "dock_type": "aruco_dock",
+                "navigate_to_staging_pose": True,
+            },
+        ],
+    )
+
+    ld.add_action(frontier_explorer)
+    ld.add_action(nav2_mission_fsm)
 
     return ld
