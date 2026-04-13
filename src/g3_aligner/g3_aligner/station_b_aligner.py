@@ -40,7 +40,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from sensor_msgs.msg import Image, CompressedImage
 from std_msgs.msg import Int32, Bool
 from geometry_msgs.msg import Twist
-from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, SetBool
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
