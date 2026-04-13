@@ -466,8 +466,8 @@ class SimpleArucoDock(Node):
             self.get_logger().info(msg)
         else:
             self.get_logger().warning(msg)
-        if success:
-            self._start_post_turn()
+        # if success:
+        #     self._start_post_turn()
 
     def _publish_debug_image(self, frame: np.ndarray) -> None:
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
