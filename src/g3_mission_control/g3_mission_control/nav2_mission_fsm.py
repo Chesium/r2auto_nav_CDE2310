@@ -123,6 +123,13 @@ class Nav2MissionFSM(Node):
         if self._marker_detected:
             return  # already captured
 
+        # Only trigger docking when the marker is close enough (< 2m).
+        # This avoids switching out of EXPLORE when the marker is first
+        # glimpsed from far away — let the explorer drive closer first.
+        marker_dist = msg.pose.position.z  # Z = forward in camera optical frame
+        if marker_dist <= 0.0 or marker_dist > 2.0:
+            return
+
         # Get the robot's current pose in the map frame.
         # The docking_server needs a rough dock_pose in map frame so it can
         # navigate to the staging point.  The aruco_dock_pose_publisher
@@ -138,7 +145,6 @@ class Nav2MissionFSM(Node):
         # Use the robot's pose + forward offset as a rough dock location.
         # The docking_server will refine with external detection.
         import math
-        import numpy as np
 
         rx = tf_msg.transform.translation.x
         ry = tf_msg.transform.translation.y
@@ -149,15 +155,8 @@ class Nav2MissionFSM(Node):
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         yaw = math.atan2(siny_cosp, cosy_cosp)
 
-        # Use the camera-reported Z distance to estimate how far the marker is.
-        # Cap at 3.0m so the staging pose (dock + staging_x_offset) stays
-        # inside the local costmap even when the marker is first spotted
-        # from far away.  The docking_server refines with live detection
-        # once it reaches the staging point, so precision here doesn't matter.
-        marker_dist = msg.pose.position.z  # Z = forward in camera optical frame
-        if marker_dist <= 0.0:
-            marker_dist = 1.5  # fallback
-        marker_dist = min(marker_dist, 3.0)
+        # marker_dist was already validated (0 < dist <= 2.0) at the top
+        # of this callback, so use it directly.
 
         # Project dock position in map frame: robot pos + distance along heading
         dock_x = rx + marker_dist * math.cos(yaw)
