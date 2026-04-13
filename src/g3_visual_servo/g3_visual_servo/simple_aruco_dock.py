@@ -541,7 +541,7 @@ class SimpleArucoDock(Node):
             self._send_cmd(0.0, 0.0)
             self._cancel_post_turn()
             self.get_logger().info("Post-dock turn complete")
-            # self._start_post_shift()
+            self._start_post_shift()
         else:
             angular_z = float(np.clip(self._post_turn_kp * ccw_err, 0.0, self._post_turn_speed))
             self._send_cmd(0.0, angular_z)
