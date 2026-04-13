@@ -22,8 +22,13 @@ from geometry_msgs.msg import Twist, TwistStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
+from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool, Float32, Int32, String
 from std_srvs.srv import Trigger
+
+
+# ── marker/station mapping ──────────────────────────────────────────────────
+MARKER_STATION_MAP = {42: "A", 67: "B"}
 
 
 # ── marker geometry ──────────────────────────────────────────────────────────
@@ -106,7 +111,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("dictionary", "DICT_4X4_100")
         self.declare_parameter("dock_distance", 0.30)
         self.declare_parameter("dist_tolerance", 0.04)
-        self.declare_parameter("camera_forward_offset", 0.0)
+        self.declare_parameter("camera_forward_offset", 0.08)
         self.declare_parameter("bearing_tolerance_deg", 3.0)
         self.declare_parameter("dwell_frames", 5)
         self.declare_parameter("approach_timeout", 300.0)
@@ -133,7 +138,10 @@ class SimpleArucoDock(Node):
         image_topic = str(self.get_parameter("image_topic").value)
         info_topic = str(self.get_parameter("camera_info_topic").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
-        self._target_id = int(self.get_parameter("target_marker_id").value)
+        # Active target — set by dock_to_a / dock_to_b services
+        self._active_target_id: int | None = None
+        # Track which stations have been reported (publish pose only once per station)
+        self._station_reported: dict[str, bool] = {"A": False, "B": False}
         marker_size = float(self.get_parameter("marker_size").value)
         dict_name = str(self.get_parameter("dictionary").value)
         self._dock_dist = float(self.get_parameter("dock_distance").value)
@@ -186,6 +194,7 @@ class SimpleArucoDock(Node):
         self._odom_x: float | None = None
         self._odom_y: float | None = None
         self._post_turn_target_yaw: float | None = None
+        self._post_turn_angle: float = 0.0
         self._post_turn_timer = None
         self._post_shift_target_dist: float | None = None
         self._post_shift_start_x: float | None = None
@@ -204,27 +213,37 @@ class SimpleArucoDock(Node):
         self._debug_img_pub = self.create_publisher(CompressedImage, "/aruco_debug/image_raw/compressed", 10)
 
         # Passive detection — always publishes when marker is visible, even in IDLE
-        # FSM subscribes to these to know when to call /simple_dock/start
         self._marker_visible_pub = self.create_publisher(Bool, "/aruco_dock/marker_visible", 10)
         self._marker_id_pub = self.create_publisher(Int32, "/aruco_dock/marker_id", 10)
         self._marker_distance_pub = self.create_publisher(Float32, "/aruco_dock/marker_distance", 10)
 
+        # Station pose publishers — FSM uses these to detect stations
+        self._station_a_pose_pub = self.create_publisher(PoseStamped, "/station_a_pose", 10)
+        self._station_b_pose_pub = self.create_publisher(PoseStamped, "/station_b_pose", 10)
+
+        # Services matching upstream aruco_dock_node interface
+        self.create_service(Trigger, "/aruco_dock/dock_to_a", self._dock_to_a_cb)
+        self.create_service(Trigger, "/aruco_dock/dock_to_b", self._dock_to_b_cb)
+        self.create_service(Trigger, "/aruco_dock/scan", self._scan_cb)
+        # Keep simple_dock services for backward compatibility
         self.create_service(Trigger, "/simple_dock/start", self._start_cb)
         self.create_service(Trigger, "/simple_dock/stop", self._stop_cb)
 
         self.get_logger().info(
-            f"SimpleArucoDock ready. marker={self._target_id} "
-            f"dock_dist={self._dock_dist}m. Call /simple_dock/start to begin."
+            f"SimpleArucoDock ready. dock_dist={self._dock_dist}m. "
+            f"Call /aruco_dock/dock_to_a or /aruco_dock/dock_to_b to begin."
         )
 
     # ── services ─────────────────────────────────────────────────────────
 
-    def _start_cb(self, _req, resp):
+    def _begin_approach(self, marker_id: int, label: str, resp):
+        """Shared logic for dock_to_a, dock_to_b, and legacy start."""
         if self._state == _State.APPROACHING:
             resp.success = False
             resp.message = "Already docking"
             return resp
-        self.get_logger().info("Docking started!")
+        self._active_target_id = marker_id
+        self.get_logger().info(f"Docking started — {label} (marker {marker_id})")
         self._state = _State.APPROACHING
         self._bearing_ema = None
         self._distance_ema = None
@@ -240,8 +259,36 @@ class SimpleArucoDock(Node):
         self._cancel_post_turn()
         self._cancel_post_shift()
         resp.success = True
-        resp.message = "Approaching marker"
+        resp.message = f"Approaching {label}"
         return resp
+
+    def _dock_to_a_cb(self, _req, resp):
+        return self._begin_approach(42, "Station A", resp)
+
+    def _dock_to_b_cb(self, _req, resp):
+        return self._begin_approach(67, "Station B", resp)
+
+    def _scan_cb(self, _req, resp):
+        """Stop docking approach and return to passive scanning."""
+        self._send_cmd(0.0, 0.0)
+        self._state = _State.IDLE
+        self._active_target_id = None
+        self._cancel_post_turn()
+        self._cancel_post_shift()
+        # Reset station detection so poses get re-published on next sighting
+        self._station_reported = {"A": False, "B": False}
+        self.get_logger().info("Returned to scan mode")
+        resp.success = True
+        resp.message = "Scanning"
+        return resp
+
+    def _start_cb(self, _req, resp):
+        """Legacy /simple_dock/start — uses whatever active target is set."""
+        target = self._active_target_id
+        if target is None:
+            target = int(self.get_parameter("target_marker_id").value)
+        label = MARKER_STATION_MAP.get(target, f"marker {target}")
+        return self._begin_approach(target, label, resp)
 
     def _stop_cb(self, _req, resp):
         self._send_cmd(0.0, 0.0)
@@ -278,15 +325,26 @@ class SimpleArucoDock(Node):
             self.get_logger().error(f"cv_bridge: {e}")
             return
 
-        # Always run detection for passive scanning
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        result = self._detect(gray)
 
-        # Publish passive detection info (FSM reads these)
+        # Run detectMarkers once — used for both passive scanning and active approach
+        gray_c = np.ascontiguousarray(gray, dtype=np.uint8)
+        all_corners, all_ids, _ = aruco.detectMarkers(
+            gray_c, self._aruco_dict, parameters=self._det_params
+        )
+
+        # Passive scanning: publish station poses for any detected marker
+        self._scan_and_publish_stations(all_corners, all_ids)
+
+        # Active approach: find the target marker for visual servo
+        result = self._detect_target(all_corners, all_ids)
+
+        # Publish passive detection info
         if result is not None:
             _, distance_raw, _, _, _, _ = result
+            mid = self._active_target_id if self._active_target_id else -1
             self._marker_visible_pub.publish(Bool(data=True))
-            self._marker_id_pub.publish(Int32(data=self._target_id))
+            self._marker_id_pub.publish(Int32(data=mid))
             self._marker_distance_pub.publish(Float32(data=float(distance_raw)))
         else:
             self._marker_visible_pub.publish(Bool(data=False))
@@ -297,26 +355,70 @@ class SimpleArucoDock(Node):
 
     # ── detection ────────────────────────────────────────────────────────
 
-    def _detect(self, gray: np.ndarray):
-        """Return (bearing_rad, distance_m, corners, ids, rvec, tvec) or None."""
-        gray_c = np.ascontiguousarray(gray, dtype=np.uint8)
-        corners, ids, _ = aruco.detectMarkers(
-            gray_c, self._aruco_dict, parameters=self._det_params
-        )
-        if ids is None:
-            return None
+    def _scan_and_publish_stations(self, corners, ids) -> None:
+        """Publish /station_a_pose or /station_b_pose when a known marker is seen.
+        Each station is reported only once until _scan_cb resets the flags."""
+        if ids is None or self._cam_mtx is None:
+            return
 
         cam = np.ascontiguousarray(self._cam_mtx, dtype=np.float64)
-        dist = np.ascontiguousarray(self._dist_coeffs, dtype=np.float64)
+        dist_c = np.ascontiguousarray(self._dist_coeffs, dtype=np.float64)
         obj = np.ascontiguousarray(self._obj_pts, dtype=np.float64)
 
         for i, mid in enumerate(ids.flatten()):
-            if int(mid) != self._target_id:
+            mid = int(mid)
+            station_id = MARKER_STATION_MAP.get(mid)
+            if station_id is None or self._station_reported[station_id]:
+                continue
+
+            img_pts = np.ascontiguousarray(corners[i][0], dtype=np.float64)
+            try:
+                ok, rvec, tvec = cv2.solvePnP(
+                    obj, img_pts, cam, dist_c, flags=cv2.SOLVEPNP_IPPE_SQUARE
+                )
+            except cv2.error:
+                continue
+            if not ok or tvec[2, 0] <= 0:
+                continue
+
+            # Build a PoseStamped with camera-frame distance info.
+            # The FSM only uses this to trigger "station found" — it does NOT
+            # navigate to this pose (Nav2 removed). The z value carries distance.
+            t = tvec.flatten()
+            pose = PoseStamped()
+            pose.header.stamp = self.get_clock().now().to_msg()
+            pose.header.frame_id = "camera_frame"
+            pose.pose.position.x = float(t[0])
+            pose.pose.position.y = float(t[1])
+            pose.pose.position.z = float(t[2])
+
+            if station_id == "A":
+                self._station_a_pose_pub.publish(pose)
+            else:
+                self._station_b_pose_pub.publish(pose)
+
+            self._station_reported[station_id] = True
+            self.get_logger().info(
+                f"Station {station_id} (marker {mid}) detected at {t[2]:.2f}m"
+            )
+
+    def _detect_target(self, corners, ids):
+        """Find the active target marker among pre-detected markers.
+        Returns (bearing_rad, distance_m, corners, ids, rvec, tvec) or None."""
+        if ids is None or self._active_target_id is None:
+            return None
+
+        cam = np.ascontiguousarray(self._cam_mtx, dtype=np.float64)
+        dist_c = np.ascontiguousarray(self._dist_coeffs, dtype=np.float64)
+        obj = np.ascontiguousarray(self._obj_pts, dtype=np.float64)
+
+        for i, mid in enumerate(ids.flatten()):
+            if int(mid) != self._active_target_id:
                 continue
             img_pts = np.ascontiguousarray(corners[i][0], dtype=np.float64)
             try:
                 ok, rvec, tvec = cv2.solvePnP(
-                    obj, img_pts, cam, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
+                    obj, img_pts, cam, dist_c, flags=cv2.SOLVEPNP_IPPE_SQUARE
                 )
             except cv2.error:
                 return None
@@ -511,6 +613,7 @@ class SimpleArucoDock(Node):
         angle = _ccw_angle(_angle_0_2pi(n), _angle_0_2pi(target_n))
         if angle < self._post_turn_min_angle:
             return
+        self._post_turn_angle = angle
         self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + angle)
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
@@ -563,10 +666,20 @@ class SimpleArucoDock(Node):
         if self._odom_x is None or self._odom_y is None:
             self.get_logger().warning("Skipping post-dock shift: no odom position received yet")
             return
-        # After a 90 deg left turn, moving forward follows the wall tangent.
-        # Lateral offset in camera x maps approximately to the opposite signed
-        # motion along that tangent.
-        self._post_shift_target_dist = -self._last_lateral_offset
+        # The camera is cam_forward_offset (r) ahead of the pivot point.
+        # After turning by angle `a` (CCW), the camera sweeps an arc and
+        # its projection along the new forward direction shifts.  The exact
+        # shift needed to re-align the camera with the marker is:
+        #
+        #   shift = -x * sin(a) - r * (1 - cos(a))
+        #
+        # where x = last_lateral_offset, a = CCW turn angle, r = cam offset.
+        # For 90° CW (a=270°): shift =  x - r
+        # For 90° CCW (a=90°): shift = -x - r
+        a = self._post_turn_angle
+        x = self._last_lateral_offset
+        r = self._cam_forward_offset
+        self._post_shift_target_dist = -x * math.sin(a) - r * (1.0 - math.cos(a))
         if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
             self._post_shift_target_dist = None
             return
@@ -576,7 +689,8 @@ class SimpleArucoDock(Node):
         if self._post_shift_timer is None:
             self._post_shift_timer = self.create_timer(0.02, self._post_shift_step)
         self.get_logger().info(
-            f"Post-dock shift: x={self._last_lateral_offset:+.3f}m "
+            f"Post-dock shift: x={x:+.3f}m r={r:.3f}m "
+            f"a={math.degrees(a):.0f}deg "
             f"move={self._post_shift_target_dist:+.3f}m"
         )
 
