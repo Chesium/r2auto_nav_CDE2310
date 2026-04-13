@@ -144,6 +144,7 @@ class SimpleArucoDock(Node):
         self._cmd_pub = self.create_publisher(cmd_type, "/cmd_vel", 10)
         self._done_pub = self.create_publisher(Bool, "/aruco_dock/done", 10)
         self._debug_pub = self.create_publisher(String, "/aruco_debug", 10)
+        self._debug_img_pub = self.create_publisher(Image, "/aruco_debug/image_raw", 10)
 
         self.create_service(Trigger, "/simple_dock/start", self._start_cb)
         self.create_service(Trigger, "/simple_dock/stop", self._stop_cb)
@@ -202,8 +203,8 @@ class SimpleArucoDock(Node):
 
     # ── detection ────────────────────────────────────────────────────────
 
-    def _detect(self, gray: np.ndarray) -> tuple[float, float] | None:
-        """Return (bearing_rad, distance_m) for the target marker, or None."""
+    def _detect(self, gray: np.ndarray):
+        """Return (bearing_rad, distance_m, corners, ids, rvec, tvec) or None."""
         gray_c = np.ascontiguousarray(gray, dtype=np.uint8)
         corners, ids, _ = aruco.detectMarkers(
             gray_c, self._aruco_dict, parameters=self._det_params
@@ -220,7 +221,7 @@ class SimpleArucoDock(Node):
                 continue
             img_pts = np.ascontiguousarray(corners[i][0], dtype=np.float64)
             try:
-                ok, _, tvec = cv2.solvePnP(
+                ok, rvec, tvec = cv2.solvePnP(
                     obj, img_pts, cam, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
                 )
             except cv2.error:
@@ -230,7 +231,7 @@ class SimpleArucoDock(Node):
             t = tvec.flatten()
             bearing = float(math.atan2(t[0], t[2]))
             distance = float(np.linalg.norm(t))
-            return bearing, distance
+            return bearing, distance, corners, ids, rvec, tvec
         return None
 
     # ── main loop ────────────────────────────────────────────────────────
@@ -238,6 +239,7 @@ class SimpleArucoDock(Node):
     def _process_frame(self, frame: np.ndarray) -> None:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         result = self._detect(gray)
+        debug_frame = frame.copy()
 
         # Timeout check
         now = self.get_clock().now().nanoseconds / 1e9
@@ -246,7 +248,12 @@ class SimpleArucoDock(Node):
             return
 
         if result is not None:
-            bearing_raw, distance_raw = result
+            bearing_raw, distance_raw, corners, ids, rvec, tvec = result
+
+            # Draw debug annotations
+            aruco.drawDetectedMarkers(debug_frame, corners, ids)
+            cv2.drawFrameAxes(debug_frame, self._cam_mtx, self._dist_coeffs,
+                              rvec, tvec, 0.05)
             self._lost_count = 0
 
             # EMA update
@@ -283,6 +290,9 @@ class SimpleArucoDock(Node):
                     f"HOLDING — at dock dist, dwell={self._dwell_count}/{self._dwell_frames}"
                 )
                 self._debug_pub.publish(String(data=dbg))
+                cv2.putText(debug_frame, f"HOLDING d={self._distance_ema:.2f}m dwell={self._dwell_count}/{self._dwell_frames}",
+                            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                self._debug_img_pub.publish(self._bridge.cv2_to_imgmsg(debug_frame, encoding="bgr8"))
                 return
 
             # Integral (distance only, only accumulate when far)
@@ -313,6 +323,14 @@ class SimpleArucoDock(Node):
                 f"dwell={self._dwell_count}/{self._dwell_frames}"
             )
             self._debug_pub.publish(String(data=dbg))
+
+            # Text overlay on debug image
+            cv2.putText(debug_frame, f"d={self._distance_ema:.2f}m b={math.degrees(self._bearing_ema):+.1f}deg",
+                        (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.putText(debug_frame, f"err={dist_err:+.3f} dwell={self._dwell_count}/{self._dwell_frames}",
+                        (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            cv2.putText(debug_frame, self._state.name,
+                        (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         else:
             # Marker lost
             self._lost_count += 1
@@ -325,6 +343,11 @@ class SimpleArucoDock(Node):
             # else: coast with last cmd_vel
 
             self._debug_pub.publish(String(data=f"LOST count={self._lost_count}"))
+            cv2.putText(debug_frame, f"LOST ({self._lost_count})",
+                        (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        # Publish debug image
+        self._debug_img_pub.publish(self._bridge.cv2_to_imgmsg(debug_frame, encoding="bgr8"))
 
     # ── helpers ──────────────────────────────────────────────────────────
 
