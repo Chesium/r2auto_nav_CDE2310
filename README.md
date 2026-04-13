@@ -517,4 +517,31 @@ ros2 run usb_cam usb_cam_node_exe --ros-args \
   -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
   -r image_raw:=/usb_cam/image_raw \
   -r camera_info:=/usb_cam/camera_info
+
+
+## Goal
+
+ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{ use_dock_id: false, dock_pose: { header: { frame_id: 'map' }, pose: { position: { x: 2.0, y: 0.0, z: 0.0 }, orientation: { w: 1.0 } } }, dock_type: 'aruco_dock', navigate_to_staging_pose: true }" --feedback
   
+ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{ use_dock_id: false, dock_pose: { header: { frame_id: 'map' }, pose: { position: { x: 2.0, y: 0.0, z: 0.0 }, orientation: { w: 1.0 } } }, dock_type: 'aruco_dock', navigate_to_staging_pose: false }" --feedback
+
+ros2 launch g3gzsim nav2_docking_sim_test.launch.py \ headless:=True use_rviz:=False \ world:=$(ros2 pkg prefix g3gzsim)/share/g3gzsim/worlds/warehouse_world.sdf \ x_pose:=-7.0 y_pose:=-3.0
+
+Terminal 1 — Nav2 + SLAM (no exploration):
+  ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
+
+  Terminal 2 — simple docking node:
+  ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p
+  camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
+
+  Terminal 3 — Foxglove bridge:
+  ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+
+  Terminal 4 — drive near the marker with teleop, then stop:
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+  Terminal 5 — trigger docking:
+  ros2 service call /simple_dock/start std_srvs/srv/Trigger
+
+  Terminal 6 — watch debug:
+  ros2 topic echo /aruco_debug --field data
