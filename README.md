@@ -515,12 +515,7 @@ Terminal 1 — Nav2 + SLAM (no exploration):
   ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
 
   Terminal 2 — simple docking node:
-<<<<<<< HEAD
   ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
-=======
-  ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p
-    camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
->>>>>>> 3cc9a6c191fd5dc779743d34f6cceeabb24d5a7f
 
   Terminal 3 — Foxglove bridge:
   ros2 launch foxglove_bridge foxglove_bridge_launch.xml
@@ -709,4 +704,127 @@ ros2 service call /simple_dock/start std_srvs/srv/Trigger
 
 # Terminal 5: Watch debug
 ros2 topic echo /aruco_debug --field data
+```
+
+---
+
+# Full Mission Pipeline (Explore + Dock)
+
+The full pipeline uses the **simple mission FSM** to coordinate frontier exploration and ArUco docking automatically. The flow is: explore the environment, detect a marker, stop exploring, dock onto the marker.
+
+```
+INIT → EXPLORE → DOCK → DONE
+```
+
+## What runs where
+
+### Raspberry Pi (TurtleBot)
+
+Only hardware drivers:
+
+```bash
+rosbu   # turtlebot3 bringup (motors, lidar, odom)
+```
+
+The camera is plugged into the **laptop** USB, not the Pi.
+
+### Laptop
+
+Everything else runs on the laptop. You need **6 terminals**:
+
+```bash
+# Terminal 1: Build
+cd ~/nav_ws
+git pull origin main
+colcon build --symlink-install
+source install/setup.bash
+
+# Terminal 2: USB camera
+ros2 run usb_cam usb_cam_node_exe --ros-args \
+  -p video_device:="/dev/video1" \
+  -p pixel_format:="mjpeg2rgb" \
+  -p image_width:=640 \
+  -p image_height:=480 \
+  -p camera_name:="usb_cam" \
+  -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
+  -r image_raw:=/camera/image_raw \
+  -r camera_info:=/camera/camera_info
+
+# Terminal 3: Nav2 + SLAM
+ros2 launch g3nav2 g3nav2_bringup_launch.py
+
+# Terminal 4: Frontier explorer
+ros2 run g3g_frontier_exploration frontier_explorer
+
+# Terminal 5: ArUco dock node (passive scanning + docking)
+ros2 run g3_visual_servo simple_aruco_dock
+
+# Terminal 6: Mission FSM (orchestrates explore → dock)
+ros2 run g3_mission_control simple_mission_fsm
+```
+
+Once Terminal 6 starts, the FSM will:
+1. Wait for the explorer and dock services to come online
+2. Enable frontier exploration automatically
+3. Watch for marker 42 detection (passive scanning by the dock node)
+4. When marker is seen: stop exploration, start docking approach
+5. Dock completes: post-turn (parallel to wall) + post-shift (align camera)
+
+## Monitoring
+
+```bash
+# FSM state (INIT/EXPLORE/DOCK/DONE)
+ros2 topic echo /mission_state
+
+# Docking debug (distance, bearing, normal, commands)
+ros2 topic echo /aruco_debug --field data
+
+# Marker detection
+ros2 topic echo /aruco_dock/marker_visible
+ros2 topic echo /aruco_dock/marker_distance
+
+# Docking completion
+ros2 topic echo /aruco_dock/done
+
+# Foxglove (optional)
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+# Connect at ws://localhost:8765, add Image panel on /aruco_debug/image_raw/compressed
+```
+
+## Testing docking in isolation (no Nav2 or explorer needed)
+
+```bash
+# Terminal 1: USB camera (same command as above)
+# Terminal 2: Dock node
+ros2 run g3_visual_servo simple_aruco_dock
+
+# Terminal 3: Trigger docking manually
+ros2 service call /aruco_dock/dock_to_a std_srvs/srv/Trigger
+
+# Watch debug
+ros2 topic echo /aruco_debug --field data
+
+# Abort docking
+ros2 service call /simple_dock/stop std_srvs/srv/Trigger
+```
+
+## Docking parameters (simple_aruco_dock)
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `target_marker_id` | `42` | ArUco marker ID to track |
+| `marker_size` | `0.067` m | Physical marker side length |
+| `dock_distance` | `0.30` m | Stop distance from marker |
+| `max_linear` | `0.02` m/s | Max approach speed |
+| `max_angular` | `0.05` rad/s | Max turn speed during approach |
+| `camera_forward_offset` | `0.08` m | Distance from robot pivot to camera |
+| `final_heading_offset_deg` | `-90.0` | Post-dock turn target (-90 = wall on left, 90 = wall on right) |
+| `approach_timeout` | `300.0` s | Max time for docking approach |
+
+Override at launch:
+```bash
+ros2 run g3_visual_servo simple_aruco_dock --ros-args \
+  -p marker_size:=0.165 \
+  -p dock_distance:=0.25 \
+  -p final_heading_offset_deg:=90.0
 ```
