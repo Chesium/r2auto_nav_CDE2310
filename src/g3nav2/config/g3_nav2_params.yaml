@@ -99,7 +99,7 @@ docking_server:
     dock_plugins: ['aruco_dock']
     aruco_dock:
       plugin: "opennav_docking::SimpleNonChargingDock"
-      docking_threshold: 0.05
+      docking_threshold: 0.15
       staging_x_offset: -0.7
       use_external_detection_pose: true
       use_stall_detection: false
