@@ -120,7 +120,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("lost_hold", 3)
         self.declare_parameter("lost_stop", 10)
         self.declare_parameter("use_stamped_cmd_vel", False)
-        self.declare_parameter("final_heading_offset_deg", 0.0)
+        self.declare_parameter("final_heading_offset_deg", 90.0)
         self.declare_parameter("post_turn_speed", 0.12)
         self.declare_parameter("post_turn_kp", 0.5)
         self.declare_parameter("post_turn_min_angle_deg", 1.0)
@@ -495,17 +495,19 @@ class SimpleArucoDock(Node):
         if self._odom_yaw is None or self._normal_yaw is None:
             self.get_logger().warn("Skipping post-dock turn: missing odom yaw or marker normal")
             return
-        current_n = self._normal_yaw
-        target_n = -math.pi / 2 if current_n < 0.0 else 3.0 * math.pi / 2.0
-        angle = _ccw_angle(_angle_0_2pi(current_n), _angle_0_2pi(target_n))
+        # Wall normal in odom frame = robot heading + marker normal in camera frame.
+        # Wall tangent (parallel to wall) = wall normal + final_heading_offset (default 90°).
+        wall_normal_odom = self._odom_yaw + self._normal_yaw
+        target_yaw = _wrap_angle(wall_normal_odom + self._final_heading_offset)
+        angle = _ccw_angle(_angle_0_2pi(self._odom_yaw), _angle_0_2pi(target_yaw))
         if angle < self._post_turn_min_angle:
             return
-        self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + angle)
+        self._post_turn_target_yaw = target_yaw
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
         self.get_logger().info(
-            f"Post-dock n-target: n={math.degrees(current_n):+.1f}deg "
-            f"target_n={math.degrees(target_n):+.1f}deg "
+            f"Post-dock turn: wall_normal_odom={math.degrees(wall_normal_odom):+.1f}deg "
+            f"offset={math.degrees(self._final_heading_offset):+.1f}deg "
             f"ccw={math.degrees(angle):.1f}deg "
             f"target_yaw={math.degrees(self._post_turn_target_yaw):+.1f}deg"
         )
