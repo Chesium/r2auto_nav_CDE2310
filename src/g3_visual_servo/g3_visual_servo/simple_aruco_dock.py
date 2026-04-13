@@ -41,6 +41,11 @@ def _wrap_angle(rad: float) -> float:
     return (rad + math.pi) % (2 * math.pi) - math.pi
 
 
+def _ccw_angle(from_rad: float, to_rad: float) -> float:
+    """Counter-clockwise angle from from_rad to to_rad in [0, 2pi)."""
+    return (to_rad - from_rad) % (2 * math.pi)
+
+
 def _yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
     """Extract planar yaw from a quaternion."""
     siny_cosp = 2.0 * (w * z + x * y)
@@ -164,6 +169,7 @@ class SimpleArucoDock(Node):
         self._dwell_count = 0
         self._approach_start: float | None = None
         self._odom_yaw: float | None = None
+        self._wall_normal_world_yaw: float | None = None
         self._post_turn_target_yaw: float | None = None
         self._post_turn_timer = None
 
@@ -204,6 +210,7 @@ class SimpleArucoDock(Node):
         self._distance_ema = None
         self._last_distance_cam = None
         self._normal_yaw = None
+        self._wall_normal_world_yaw = None
         self._post_turn_target_yaw = None
         self._integral = 0.0
         self._lost_count = 0
@@ -337,6 +344,8 @@ class SimpleArucoDock(Node):
 
             normal_yaw = self._marker_normal_yaw(rvec)
             self._normal_yaw = normal_yaw
+            if self._odom_yaw is not None:
+                self._wall_normal_world_yaw = _wrap_angle(self._odom_yaw + normal_yaw)
 
             dist_err = self._distance_ema - self._dock_dist
             holding_position = self._distance_ema <= self._dock_dist + self._dist_tol
@@ -458,18 +467,21 @@ class SimpleArucoDock(Node):
     def _start_post_turn(self) -> None:
         if self._post_turn_speed <= 0.0:
             return
-        if self._odom_yaw is None:
-            self.get_logger().warn("Skipping post-dock turn: no odom yaw received yet")
+        if self._odom_yaw is None or self._wall_normal_world_yaw is None:
+            self.get_logger().warn("Skipping post-dock turn: missing odom yaw or wall heading")
             return
-        angle = abs(self._final_heading_offset)
+        self._post_turn_target_yaw = _wrap_angle(
+            self._wall_normal_world_yaw + self._final_heading_offset
+        )
+        angle = _ccw_angle(self._odom_yaw, self._post_turn_target_yaw)
         if angle < self._post_turn_min_angle:
             return
-        self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + self._final_heading_offset)
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
         self.get_logger().info(
-            f"Post-dock yaw target: current={math.degrees(self._odom_yaw):+.1f}deg "
-            f"target={math.degrees(self._post_turn_target_yaw):+.1f}deg"
+            f"Post-dock wall target: normal={math.degrees(self._wall_normal_world_yaw):+.1f}deg "
+            f"target={math.degrees(self._post_turn_target_yaw):+.1f}deg "
+            f"ccw={math.degrees(angle):.1f}deg"
         )
 
     def _post_turn_step(self) -> None:
@@ -477,21 +489,23 @@ class SimpleArucoDock(Node):
             self._cancel_post_turn()
             return
         yaw_err = _wrap_angle(self._post_turn_target_yaw - self._odom_yaw)
+        ccw_err = _ccw_angle(self._odom_yaw, self._post_turn_target_yaw)
         self._debug_pub.publish(
             String(
                 data=(
                     f"POST_TURN yaw={math.degrees(self._odom_yaw):+.1f} "
                     f"target={math.degrees(self._post_turn_target_yaw):+.1f} "
-                    f"err={math.degrees(yaw_err):+.1f}"
+                    f"err={math.degrees(yaw_err):+.1f} "
+                    f"ccw={math.degrees(ccw_err):.1f}"
                 )
             )
         )
-        if abs(yaw_err) <= self._post_turn_yaw_tol:
+        if abs(yaw_err) <= self._post_turn_yaw_tol or ccw_err <= self._post_turn_yaw_tol:
             self._send_cmd(0.0, 0.0)
             self._cancel_post_turn()
             self.get_logger().info("Post-dock turn complete")
         else:
-            angular_z = float(np.clip(self._kp_ang * yaw_err, -self._post_turn_speed, self._post_turn_speed))
+            angular_z = float(np.clip(self._kp_ang * ccw_err, 0.0, self._post_turn_speed))
             self._send_cmd(0.0, angular_z)
 
     def _cancel_post_turn(self) -> None:
