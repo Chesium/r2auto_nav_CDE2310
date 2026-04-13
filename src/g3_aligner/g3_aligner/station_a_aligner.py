@@ -49,7 +49,7 @@ class HoughDetectorStationA(Node):
 
         # ── Linear P-control ──────────────────────────────────────────────
         # Y-axis: camera rotated 90°, so cy drives fwd/bwd.
-        self.KP_LINEAR           = 0.002
+        self.KP_LINEAR           = 0.0015
         self.MAX_LINEAR_VEL      = 0.08
         self.ALIGN_THRESHOLD     = 15     # pixels on Y-axis
         self.ALIGN_STABLE_FRAMES = 5      # consecutive aligned frames before notifying FSM
@@ -60,18 +60,18 @@ class HoughDetectorStationA(Node):
         self.DP       = 1.2
         self.MIN_DIST = 100
         self.PARAM1   = 50
-        self.PARAM2   = 25
-        self.MIN_R    = 55   
-        self.MAX_R    = 75
+        self.PARAM2   = 45
+        self.MIN_R    = 80
+        self.MAX_R    = 150
 
         # ── Temporal filter ────────────────────────────────────────────────
-        self.CONFIRM_FRAMES   = 4
+        self.CONFIRM_FRAMES   = 5
         self.consecutive_hits = 0
         self.confirmed        = False
         self.was_confirmed    = False   # for instant NO DETECT log on transition
 
         # ── EMA smoother on cy (Y-axis) ────────────────────────────────────
-        self.EMA_ALPHA = 0.35
+        self.EMA_ALPHA = 0.20
         self.ema_cy    = None
 
         # ── Darkness check disabled ────────────────────────────────────────

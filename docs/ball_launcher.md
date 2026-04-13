@@ -115,7 +115,7 @@ ros2 run g3_ball_launcher ball_launcher_node
 ros2 topic echo /launcher_status
 
 # Terminal 3 — trigger a shot
-ros2 service call /fire_launcher std_srvs/srv/Trigger "{}"
+ros2 service call /fire_launcher std_srvs/srv/Trigger "{}" 
 
 # Terminal 4 — stop the launcher
 ros2 service call /stop_launcher std_srvs/srv/Trigger "{}"
