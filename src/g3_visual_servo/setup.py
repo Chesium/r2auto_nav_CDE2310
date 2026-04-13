@@ -16,6 +16,9 @@ setup(
     entry_points={
         'console_scripts': [
             'aruco_dock = g3_visual_servo.aruco_dock_node:main',
+            'aruco_dock_pose_publisher = g3_visual_servo.aruco_dock_pose_publisher:main',
+            'dock_action_client = g3_visual_servo.dock_action_client:main',
+            'simple_aruco_dock = g3_visual_servo.simple_aruco_dock:main',
             'dock_test = g3_visual_servo.dock_test:main',
             'cmd_vel_test = g3_visual_servo.cmd_vel_test:main',
             'turn_calibrate = g3_visual_servo.turn_calibrate:main',

@@ -405,22 +405,6 @@ note: run the nav 2 startup command (down-left) after the cartographer output st
 after you can see the costmap layers in the RViz interface,
 send the "start exploration" command in tmux A (down-right)
 
-### Run Mission Controller
-
-After the `g3nav2` tmux session is fully up, run in a new terminal, frontier exploration starts:
-
-```bash
-ros2 run g3_mission_control mission_controller
-```
-
-To skip straight to a specific FSM state (e.g. for testing):
-
-```bash
-ros2 run g3_mission_control mission_controller_2 --ros-args -p initial_state:=ALIGN_AT_A
-```
-
-Valid `initial_state` values: `INIT`, `EXPLORE`, `NAVIGATE_TO_A`, `ALIGN_AT_A`, `FIRE_AT_A`, `NAVIGATE_TO_B`, `ALIGN_AT_B`, `FIRE_AT_B`, `COMPLETE`.
-
 # ArUco Visual Servo Docking
 
 Autonomous docking onto a 4×4 ArUco marker (ID 42, 16.5 cm) using the USB camera.
@@ -517,4 +501,212 @@ ros2 run usb_cam usb_cam_node_exe --ros-args \
   -p camera_info_url:="file:///home/g3/camera_ws/src/calibration/usb_cam_calibration.yaml" \
   -r image_raw:=/usb_cam/image_raw \
   -r camera_info:=/usb_cam/camera_info
+
+
+## Goal
+
+ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{ use_dock_id: false, dock_pose: { header: { frame_id: 'map' }, pose: { position: { x: 2.0, y: 0.0, z: 0.0 }, orientation: { w: 1.0 } } }, dock_type: 'aruco_dock', navigate_to_staging_pose: true }" --feedback
   
+ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{ use_dock_id: false, dock_pose: { header: { frame_id: 'map' }, pose: { position: { x: 2.0, y: 0.0, z: 0.0 }, orientation: { w: 1.0 } } }, dock_type: 'aruco_dock', navigate_to_staging_pose: false }" --feedback
+
+ros2 launch g3gzsim nav2_docking_sim_test.launch.py \ headless:=True use_rviz:=False \ world:=$(ros2 pkg prefix g3gzsim)/share/g3gzsim/worlds/warehouse_world.sdf \ x_pose:=-7.0 y_pose:=-3.0
+
+Terminal 1 — Nav2 + SLAM (no exploration):
+  ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
+
+  Terminal 2 — simple docking node:
+<<<<<<< HEAD
+  ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
+=======
+  ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p
+    camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
+>>>>>>> 3cc9a6c191fd5dc779743d34f6cceeabb24d5a7f
+
+  Terminal 3 — Foxglove bridge:
+  ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+
+  Terminal 4 — drive near the marker with teleop, then stop:
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+  Terminal 5 — trigger docking:
+  ros2 service call /simple_dock/start std_srvs/srv/Trigger
+
+  Terminal 6 — watch debug:
+  ros2 topic echo /aruco_debug --field data
+
+---
+
+# Nav2 Docking (branch: `feat/nav2-docking`)
+
+Uses Nav2's `docking_server` with ArUco marker detection. The robot navigates to a staging point 0.7m in front of the marker, then the docking controller drives the final approach using live camera detection. Stops 30cm in front of the marker.
+
+## How it works
+
+1. `aruco_dock_pose_publisher` detects the ArUco marker and publishes its pose on `/detected_dock_pose`
+2. You (or the FSM) send a `DockRobot` action goal with the approximate marker position in map frame
+3. Nav2 navigates to a staging point 0.7m in front of the dock
+4. The docking controller approaches using live camera detection
+5. Robot stops when within `docking_threshold` of the target (30cm in front of marker)
+
+## Configuration: where to change things
+
+### ArUco marker size
+
+The marker size affects solvePnP distance accuracy. **Wrong size = wrong distance = overshoot or undershoot.**
+
+| File | Parameter | Default | When |
+|---|---|---|---|
+| `src/g3_visual_servo/launch/aruco_dock_hw_test.launch.py` | `marker_size` launch arg | `0.165` | Hardware (USB cam) |
+| `src/g3gzsim/launch/nav2_docking_sim_test.launch.py` | `marker_size` launch arg | `0.18` | Simulation |
+
+Override at launch: `marker_size:=0.067` (for 6.7cm marker)
+
+### Camera topics
+
+The pose publisher subscribes to camera image and camera_info. These differ between hardware and sim:
+
+| Setup | `image_topic` | `camera_info_topic` | Set where |
+|---|---|---|---|
+| **Hardware (USB cam)** | `/usb_cam/image_raw` | `/usb_cam/camera_info` | `aruco_dock_hw_test.launch.py` |
+| **Simulation (Gazebo)** | `/camera/image_raw` | `/camera/camera_info` | `nav2_docking_sim_test.launch.py` |
+| **RPi camera_ros** | `/camera/image_raw` | `/camera/camera_info` | Override via `--ros-args` |
+
+To override at launch or CLI:
+```bash
+ros2 run g3_visual_servo aruco_dock_pose_publisher --ros-args \
+  -p image_topic:=/your/image/topic \
+  -p camera_info_topic:=/your/camera_info/topic
+```
+
+### Docking parameters
+
+| Parameter | Sim | Hardware | File |
+|---|---|---|---|
+| `docking_threshold` | `0.30` | `0.15` | `g3gzsim/nav2/nav2_params.yaml` / `g3nav2/config/g3_nav2_params.yaml` |
+| `dock_offset_z` (stop distance) | `0.30` | `0.30` | `aruco_dock_pose_publisher.py` param `dock_offset_z` |
+| `staging_x_offset` | `-0.7` | `-0.7` | Nav2 params (staging = dock_pose + 0.7m back) |
+| `filter_coef` | `0.3` | `0.3` | Nav2 params (EMA smoothing, higher = more responsive) |
+| `v_linear_max` | `0.15` | `0.15` | Nav2 params (approach speed) |
+
+### Camera calibration
+
+**Critical for IRL.** Without correct intrinsics, solvePnP distances are wrong and the robot won't stop at the right place.
+
+The USB cam needs a calibration file. Check it's being loaded:
+```bash
+ros2 topic echo /usb_cam/camera_info --once
+```
+Verify `k` has non-zero focal lengths (fx, fy) and the principal point (cx, cy) is roughly center of frame. If `d` is all zeros and `k` looks wrong, the camera is uncalibrated.
+
+To calibrate:
+```bash
+ros2 run camera_calibration cameracalibrator \
+  --size 8x6 --square 0.025 \
+  --ros-args -r image:=/usb_cam/image_raw -r camera_info:=/usb_cam/camera_info
+```
+
+## Test in Simulation
+
+```bash
+# Build
+colcon build --packages-select g3_mission_control g3_visual_servo g3gzsim g3g_frontier_exploration
+source install/setup.bash
+
+# Launch sim (headless, no FSM — manual dock test)
+ros2 launch g3gzsim nav2_docking_sim_test.launch.py \
+  headless:=True use_rviz:=False use_fsm:=false
+
+# In another terminal — send dock goal (marker is at x=3.0 in square_room)
+ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{
+  use_dock_id: false,
+  dock_pose: {header: {frame_id: 'map'}, pose: {position: {x: 3.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}},
+  dock_type: 'aruco_dock',
+  navigate_to_staging_pose: true
+}" --feedback
+```
+
+Expected output:
+```
+Successful navigation to staging pose
+Successful initial dock detection
+Made contact with dock
+Docking was successful!
+Goal finished with status: SUCCEEDED
+```
+
+## Test on Real Robot
+
+**Pi** — only runs hardware drivers:
+```bash
+rosbu   # turtlebot3 bringup (motors, lidar, odom)
+```
+
+**Laptop** — runs everything else:
+
+```bash
+# Terminal 1: Nav2 + SLAM
+ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
+
+# Terminal 2: USB camera + ArUco pose publisher
+ros2 launch g3_visual_servo aruco_dock_hw_test.launch.py
+
+# Terminal 3: Foxglove (optional, for debug)
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+
+# Terminal 4: Verify detection is working
+ros2 topic echo /aruco_debug --field data
+# Should show: d3d=X.XXX d2d=X.XXX x=... y=... z=...
+
+# Terminal 5: Send dock goal
+# Replace x/y with the marker's approximate position in the map frame
+ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{
+  use_dock_id: false,
+  dock_pose: {header: {frame_id: 'map'}, pose: {position: {x: 1.5, y: 0.0, z: 0.0}, orientation: {w: 1.0}}},
+  dock_type: 'aruco_dock',
+  navigate_to_staging_pose: true
+}" --feedback
+```
+
+### Quick IRL checklist
+
+1. Camera streaming? `ros2 topic hz /usb_cam/image_raw` (should be ~30Hz)
+2. Camera calibrated? `ros2 topic echo /usb_cam/camera_info --once` (check K matrix has real values)
+3. ArUco detected? `ros2 topic echo /aruco_debug --field data` (should show distances, not `NO_DETECTION`)
+4. Marker size correct? Default is 16.5cm. Override: `marker_size:=0.067`
+5. Robot can move? `ros2 topic echo /cmd_vel --once` after sending dock goal
+
+## Debug topics
+
+| Topic | Type | What it shows |
+|---|---|---|
+| `/aruco_debug` | `String` | Distance to marker, pose values, or `NO_DETECTION` |
+| `/detected_dock_pose` | `PoseStamped` | Raw marker pose in camera frame (fed to docking_server) |
+| `/filtered_dock_pose` | `PoseStamped` | Smoothed pose after docking_server's EMA filter |
+| `/docking_trajectory` | | Planned docking path |
+| `/mission_state` | `String` | FSM state (when using `nav2_mission_fsm`) |
+
+## Fallback: Simple ArUco Docking (no Nav2)
+
+If Nav2 docking doesn't work IRL, use `simple_aruco_dock` which bypasses the docking_server entirely:
+
+```bash
+# Terminal 1: Nav2 + SLAM
+ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
+
+# Terminal 2: Simple docking node
+ros2 run g3_visual_servo simple_aruco_dock --ros-args \
+  -p image_topic:=/usb_cam/image_raw \
+  -p camera_info_topic:=/usb_cam/camera_info \
+  -p target_marker_id:=42 \
+  -p marker_size:=0.067 \
+  -p use_stamped_cmd_vel:=True
+
+# Terminal 3: Drive near the marker with teleop, then stop
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+# Terminal 4: Trigger docking
+ros2 service call /simple_dock/start std_srvs/srv/Trigger
+
+# Terminal 5: Watch debug
+ros2 topic echo /aruco_debug --field data
+```

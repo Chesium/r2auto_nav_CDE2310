@@ -3,7 +3,17 @@
   <model name="aruco_marker_42">
     <static>true</static>
     <link name="link">
-      <!-- Thin placard: 0.18m x 0.18m marker face, 0.005m thick -->
+      <!--
+        Thin placard. The box is 0.005 m deep along X so the large
+        printed face points along the model's +X axis when the marker
+        model is placed in the world with identity rotation.
+
+        Physical dimensions of the printed face: 0.18 m x 0.18 m.
+        The ArUco pattern (including its black border) fills the entire
+        face with NO quiet zone — so marker_size=0.18 is exact for
+        solvePnP.  The grey wall behind provides sufficient contrast
+        for detection.
+      -->
       <visual name="marker_visual">
         <geometry>
           <box><size>0.005 0.18 0.18</size></box>
@@ -12,7 +22,7 @@
           <diffuse>1 1 1 1</diffuse>
           <pbr>
             <metal>
-              <albedo_map>materials/textures/marker42.png</albedo_map>
+              <albedo_map>materials/textures/aruco_42.png</albedo_map>
             </metal>
           </pbr>
         </material>
