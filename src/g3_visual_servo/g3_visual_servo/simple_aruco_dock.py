@@ -46,6 +46,11 @@ def _ccw_angle(from_rad: float, to_rad: float) -> float:
     return (to_rad - from_rad) % (2 * math.pi)
 
 
+def _angle_0_2pi(rad: float) -> float:
+    """Wrap angle to [0, 2pi)."""
+    return rad % (2 * math.pi)
+
+
 def _yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
     """Extract planar yaw from a quaternion."""
     siny_cosp = 2.0 * (w * z + x * y)
@@ -120,6 +125,9 @@ class SimpleArucoDock(Node):
         self.declare_parameter("post_turn_kp", 0.5)
         self.declare_parameter("post_turn_min_angle_deg", 1.0)
         self.declare_parameter("post_turn_yaw_tolerance_deg", 2.0)
+        self.declare_parameter("post_shift_speed", 0.04)
+        self.declare_parameter("post_shift_min_distance", 0.02)
+        self.declare_parameter("post_shift_distance_tolerance", 0.01)
 
         # Read parameters
         image_topic = str(self.get_parameter("image_topic").value)
@@ -137,6 +145,9 @@ class SimpleArucoDock(Node):
         self._post_turn_kp = float(self.get_parameter("post_turn_kp").value)
         self._post_turn_min_angle = math.radians(float(self.get_parameter("post_turn_min_angle_deg").value))
         self._post_turn_yaw_tol = math.radians(float(self.get_parameter("post_turn_yaw_tolerance_deg").value))
+        self._post_shift_speed = float(self.get_parameter("post_shift_speed").value)
+        self._post_shift_min_dist = float(self.get_parameter("post_shift_min_distance").value)
+        self._post_shift_dist_tol = float(self.get_parameter("post_shift_distance_tolerance").value)
         self._dwell_frames = int(self.get_parameter("dwell_frames").value)
         self._approach_timeout = float(self.get_parameter("approach_timeout").value)
         self._kp_ang = float(self.get_parameter("kp_angular").value)
@@ -165,15 +176,22 @@ class SimpleArucoDock(Node):
         self._bearing_ema: float | None = None
         self._distance_ema: float | None = None
         self._last_distance_cam: float | None = None
+        self._last_lateral_offset: float | None = None
         self._normal_yaw: float | None = None
         self._integral = 0.0
         self._lost_count = 0
         self._dwell_count = 0
         self._approach_start: float | None = None
         self._odom_yaw: float | None = None
-        self._wall_normal_world_yaw: float | None = None
+        self._odom_x: float | None = None
+        self._odom_y: float | None = None
         self._post_turn_target_yaw: float | None = None
         self._post_turn_timer = None
+        self._post_shift_target_dist: float | None = None
+        self._post_shift_start_x: float | None = None
+        self._post_shift_start_y: float | None = None
+        self._post_shift_heading_yaw: float | None = None
+        self._post_shift_timer = None
 
         # ROS I/O
         self.create_subscription(CameraInfo, info_topic, self._info_cb, 10)
@@ -211,14 +229,16 @@ class SimpleArucoDock(Node):
         self._bearing_ema = None
         self._distance_ema = None
         self._last_distance_cam = None
+        self._last_lateral_offset = None
         self._normal_yaw = None
-        self._wall_normal_world_yaw = None
         self._post_turn_target_yaw = None
+        self._post_shift_target_dist = None
         self._integral = 0.0
         self._lost_count = 0
         self._dwell_count = 0
         self._approach_start = self.get_clock().now().nanoseconds / 1e9
         self._cancel_post_turn()
+        self._cancel_post_shift()
         resp.success = True
         resp.message = "Approaching marker"
         return resp
@@ -228,6 +248,7 @@ class SimpleArucoDock(Node):
         self._state = _State.IDLE
         self.get_logger().info("Docking aborted by user.")
         self._cancel_post_turn()
+        self._cancel_post_shift()
         resp.success = True
         resp.message = "Stopped"
         return resp
@@ -245,6 +266,8 @@ class SimpleArucoDock(Node):
     def _odom_cb(self, msg: Odometry) -> None:
         q = msg.pose.pose.orientation
         self._odom_yaw = _yaw_from_quaternion(q.x, q.y, q.z, q.w)
+        self._odom_x = msg.pose.pose.position.x
+        self._odom_y = msg.pose.pose.position.y
 
     def _image_cb(self, msg: Image) -> None:
         if self._cam_mtx is None:
@@ -304,6 +327,7 @@ class SimpleArucoDock(Node):
             distance_cam = float(t[2])
             distance = max(distance_cam - self._cam_forward_offset, 0.0)
             self._last_distance_cam = distance_cam
+            self._last_lateral_offset = float(t[0])
             return bearing, distance, corners, ids, rvec, tvec
         return None
 
@@ -346,8 +370,6 @@ class SimpleArucoDock(Node):
 
             normal_yaw = self._marker_normal_yaw(rvec)
             self._normal_yaw = normal_yaw
-            if self._odom_yaw is not None:
-                self._wall_normal_world_yaw = _wrap_angle(self._odom_yaw + normal_yaw)
 
             dist_err = self._distance_ema - self._dock_dist
             holding_position = self._distance_ema <= self._dock_dist + self._dist_tol
@@ -398,6 +420,7 @@ class SimpleArucoDock(Node):
             dbg = (
                 f"d={self._distance_ema:.3f} raw={distance_raw:.3f} "
                 f"cam={cam_dist:.3f} "
+                f"x={self._last_lateral_offset or 0.0:+.3f} "
                 f"b={math.degrees(self._bearing_ema):+.1f} "
                 f"n={math.degrees(self._normal_yaw or 0.0):+.1f} "
                 f"err={dist_err:+.3f} cmd=({linear_x:.3f},{angular_z:.3f}) "
@@ -408,9 +431,9 @@ class SimpleArucoDock(Node):
             # Text overlay on debug image
             cv2.putText(debug_frame, f"d={self._distance_ema:.2f}m b={math.degrees(self._bearing_ema):+.1f}deg",
                         (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 255, 0), 2)
-            cv2.putText(debug_frame, f"cam={cam_dist:.2f}m n={math.degrees(self._normal_yaw or 0.0):+.1f}deg",
+            cv2.putText(debug_frame, f"cam={cam_dist:.2f}m x={self._last_lateral_offset or 0.0:+.2f}m",
                         (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
-            cv2.putText(debug_frame, f"err={dist_err:+.3f} dwell={self._dwell_count}/{self._dwell_frames}",
+            cv2.putText(debug_frame, f"n={math.degrees(self._normal_yaw or 0.0):+.1f}deg err={dist_err:+.3f} dwell={self._dwell_count}/{self._dwell_frames}",
                         (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(debug_frame, self._state.name,
                         (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
@@ -469,21 +492,22 @@ class SimpleArucoDock(Node):
     def _start_post_turn(self) -> None:
         if self._post_turn_speed <= 0.0:
             return
-        if self._odom_yaw is None or self._wall_normal_world_yaw is None:
-            self.get_logger().warn("Skipping post-dock turn: missing odom yaw or wall heading")
+        if self._odom_yaw is None or self._normal_yaw is None:
+            self.get_logger().warn("Skipping post-dock turn: missing odom yaw or marker normal")
             return
-        self._post_turn_target_yaw = _wrap_angle(
-            self._wall_normal_world_yaw + self._final_heading_offset
-        )
-        angle = _ccw_angle(self._odom_yaw, self._post_turn_target_yaw)
+        current_n = self._normal_yaw
+        target_n = -math.pi / 2 if current_n < 0.0 else 3.0 * math.pi / 2.0
+        angle = _ccw_angle(_angle_0_2pi(current_n), _angle_0_2pi(target_n))
         if angle < self._post_turn_min_angle:
             return
+        self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + angle)
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
         self.get_logger().info(
-            f"Post-dock wall target: normal={math.degrees(self._wall_normal_world_yaw):+.1f}deg "
-            f"target={math.degrees(self._post_turn_target_yaw):+.1f}deg "
-            f"ccw={math.degrees(angle):.1f}deg"
+            f"Post-dock n-target: n={math.degrees(current_n):+.1f}deg "
+            f"target_n={math.degrees(target_n):+.1f}deg "
+            f"ccw={math.degrees(angle):.1f}deg "
+            f"target_yaw={math.degrees(self._post_turn_target_yaw):+.1f}deg"
         )
 
     def _post_turn_step(self) -> None:
@@ -506,6 +530,7 @@ class SimpleArucoDock(Node):
             self._send_cmd(0.0, 0.0)
             self._cancel_post_turn()
             self.get_logger().info("Post-dock turn complete")
+            self._start_post_shift()
         else:
             angular_z = float(np.clip(self._post_turn_kp * ccw_err, 0.0, self._post_turn_speed))
             self._send_cmd(0.0, angular_z)
@@ -515,6 +540,77 @@ class SimpleArucoDock(Node):
             self._post_turn_timer.cancel()
             self._post_turn_timer = None
         self._post_turn_target_yaw = None
+
+    # ── post-dock shift -------------------------------------------------
+
+    def _start_post_shift(self) -> None:
+        if self._post_shift_speed <= 0.0:
+            return
+        if self._last_lateral_offset is None:
+            self.get_logger().warn("Skipping post-dock shift: no lateral offset available")
+            return
+        if self._odom_x is None or self._odom_y is None:
+            self.get_logger().warn("Skipping post-dock shift: no odom position received yet")
+            return
+        # After a 90 deg left turn, moving forward follows the wall tangent.
+        # Lateral offset in camera x maps approximately to the opposite signed
+        # motion along that tangent.
+        self._post_shift_target_dist = -self._last_lateral_offset
+        if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
+            self._post_shift_target_dist = None
+            return
+        self._post_shift_start_x = self._odom_x
+        self._post_shift_start_y = self._odom_y
+        self._post_shift_heading_yaw = self._odom_yaw
+        if self._post_shift_timer is None:
+            self._post_shift_timer = self.create_timer(0.02, self._post_shift_step)
+        self.get_logger().info(
+            f"Post-dock shift: x={self._last_lateral_offset:+.3f}m "
+            f"move={self._post_shift_target_dist:+.3f}m"
+        )
+
+    def _post_shift_step(self) -> None:
+        if (
+            self._post_shift_target_dist is None
+            or self._post_shift_start_x is None
+            or self._post_shift_start_y is None
+            or self._post_shift_heading_yaw is None
+            or self._odom_x is None
+            or self._odom_y is None
+        ):
+            self._cancel_post_shift()
+            return
+        dx = self._odom_x - self._post_shift_start_x
+        dy = self._odom_y - self._post_shift_start_y
+        progress = (
+            dx * math.cos(self._post_shift_heading_yaw)
+            + dy * math.sin(self._post_shift_heading_yaw)
+        )
+        remaining = self._post_shift_target_dist - progress
+        self._debug_pub.publish(
+            String(
+                data=(
+                    f"POST_SHIFT target={self._post_shift_target_dist:+.3f} "
+                    f"progress={progress:+.3f} rem={remaining:+.3f}"
+                )
+            )
+        )
+        if abs(remaining) <= self._post_shift_dist_tol:
+            self._send_cmd(0.0, 0.0)
+            self._cancel_post_shift()
+            self.get_logger().info("Post-dock shift complete")
+        else:
+            linear_x = math.copysign(self._post_shift_speed, remaining)
+            self._send_cmd(linear_x, 0.0)
+
+    def _cancel_post_shift(self) -> None:
+        if self._post_shift_timer is not None:
+            self._post_shift_timer.cancel()
+            self._post_shift_timer = None
+        self._post_shift_target_dist = None
+        self._post_shift_start_x = None
+        self._post_shift_start_y = None
+        self._post_shift_heading_yaw = None
 
 
 def main(args: list[str] | None = None) -> None:
