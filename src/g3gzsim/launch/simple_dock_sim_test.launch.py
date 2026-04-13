@@ -51,7 +51,7 @@ def generate_launch_description() -> LaunchDescription:
 
     ld.add_action(DeclareLaunchArgument("headless", default_value="False"))
     ld.add_action(DeclareLaunchArgument("use_rviz", default_value="True"))
-    ld.add_action(DeclareLaunchArgument("x_pose", default_value="-2.0"))
+    ld.add_action(DeclareLaunchArgument("x_pose", default_value="0.0"))
     ld.add_action(DeclareLaunchArgument("y_pose", default_value="0.0"))
     ld.add_action(DeclareLaunchArgument("target_marker_id", default_value="42"))
     ld.add_action(DeclareLaunchArgument("marker_size", default_value="0.18"))

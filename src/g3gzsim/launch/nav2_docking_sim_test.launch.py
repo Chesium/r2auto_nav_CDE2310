@@ -231,7 +231,7 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": True,
                 "dock_pose_topic": "/detected_dock_pose",
                 "dock_type": "aruco_dock",
-                "navigate_to_staging_pose": False,
+                "navigate_to_staging_pose": True,
             },
         ],
     )

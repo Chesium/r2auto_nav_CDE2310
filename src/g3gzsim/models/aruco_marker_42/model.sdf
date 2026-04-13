@@ -8,11 +8,11 @@
         printed face points along the model's +X axis when the marker
         model is placed in the world with identity rotation.
 
-        Physical dimensions of the printed face: 0.18 m x 0.18 m
-        (including quiet zone). The inner ArUco pattern occupies
-        roughly 0.165 m, matching the existing detector's marker_size
-        default — the border adds ~8% padding on each side for reliable
-        detection.
+        Physical dimensions of the printed face: 0.18 m x 0.18 m.
+        The ArUco pattern (including its black border) fills the entire
+        face with NO quiet zone — so marker_size=0.18 is exact for
+        solvePnP.  The grey wall behind provides sufficient contrast
+        for detection.
       -->
       <visual name="marker_visual">
         <geometry>
