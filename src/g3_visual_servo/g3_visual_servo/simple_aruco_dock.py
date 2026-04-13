@@ -78,7 +78,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("image_topic", "/camera/image_raw")
         self.declare_parameter("camera_info_topic", "/camera/camera_info")
         self.declare_parameter("target_marker_id", 42)
-        self.declare_parameter("marker_size", 0.165)
+        self.declare_parameter("marker_size", 0.067)
         self.declare_parameter("dictionary", "DICT_4X4_100")
         self.declare_parameter("dock_distance", 0.30)
         self.declare_parameter("dist_tolerance", 0.04)
