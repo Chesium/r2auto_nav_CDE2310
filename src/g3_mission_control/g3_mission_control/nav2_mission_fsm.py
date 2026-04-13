@@ -68,7 +68,7 @@ class Nav2MissionFSM(Node):
         # ── Parameters ────────────────────────────────────────────────────
         self.declare_parameter("dock_pose_topic", "/detected_dock_pose")
         self.declare_parameter("dock_type", "aruco_dock")
-        self.declare_parameter("navigate_to_staging_pose", True)
+        self.declare_parameter("navigate_to_staging_pose", False)
 
         dock_pose_topic = self.get_parameter("dock_pose_topic").value
         self._dock_type = self.get_parameter("dock_type").value
@@ -86,6 +86,8 @@ class Nav2MissionFSM(Node):
         # ── Action result (written by action callbacks only) ─────────────
         self._dock_succeeded: bool = False
         self._dock_finished: bool = False
+        self._retry_count: int = 0
+        self._max_retries: int = 3
 
         # ── TF for converting robot pose to map frame ────────────────────
         self._tf_buffer = Buffer()
@@ -238,17 +240,24 @@ class Nav2MissionFSM(Node):
                 self.get_logger().info("Docking SUCCEEDED — mission complete")
                 self._transition_to(State.DONE)
             else:
-                self.get_logger().warn(
-                    "Docking FAILED — retrying with fresh detection"
-                )
-                # Reset and go back to explore to try again
-                self._marker_detected = False
-                self._marker_map_pose = None
-                self._dock_finished = False
-                self._dock_succeeded = False
-                self._dock_entered = False
-                self._explore_entered = False
-                self._transition_to(State.EXPLORE)
+                self._retry_count += 1
+                if self._retry_count >= self._max_retries:
+                    self.get_logger().error(
+                        f"Docking FAILED after {self._max_retries} attempts — giving up"
+                    )
+                    self._transition_to(State.DONE)
+                else:
+                    self.get_logger().warn(
+                        f"Docking FAILED (attempt {self._retry_count}/{self._max_retries}) "
+                        f"— retrying with fresh detection"
+                    )
+                    self._marker_detected = False
+                    self._marker_map_pose = None
+                    self._dock_finished = False
+                    self._dock_succeeded = False
+                    self._dock_entered = False
+                    self._explore_entered = False
+                    self._transition_to(State.EXPLORE)
 
     # ═══════════════════════════ HELPERS ══════════════════════════════════
 
