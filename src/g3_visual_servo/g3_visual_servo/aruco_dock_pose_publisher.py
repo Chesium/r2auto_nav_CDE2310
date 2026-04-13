@@ -240,6 +240,10 @@ class ArucoDockPosePublisher(Node):
                 return None  # marker behind camera → bogus
 
             translation = tvec.flatten()
+            # Offset the target toward the camera so the robot stops
+            # dock_offset_z meters in front of the marker.
+            # Camera optical frame: Z = depth (forward).
+            translation[2] = max(0.01, translation[2] - self._dock_offset_z)
             # Use the real solvePnP orientation — the docking_server
             # handles frame transforms via TF and zeros out roll/pitch
             # internally, so we should give it the true marker orientation.
