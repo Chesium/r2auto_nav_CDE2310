@@ -30,6 +30,7 @@ setup(
     entry_points={
         "console_scripts": [
             "frontier_explorer = g3g_frontier_exploration.frontier_explorer:main",
+            "post_exploration_traverser = g3g_frontier_exploration.post_exploration_traverser:main",
         ],
     },
 )

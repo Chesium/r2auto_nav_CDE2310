@@ -18,6 +18,7 @@ from rclpy.qos import HistoryPolicy
 from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from rclpy.time import Time
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer
 from tf2_ros import TransformException
@@ -248,6 +249,11 @@ class FrontierExplorer(BasicNavigator):
             "/exploration/current_goal",
             10,
         )
+        self._completion_publisher = self.create_publisher(
+            Bool,
+            "/exploration_complete",
+            map_qos,
+        )
         self._toggle_service = self.create_service(
             SetBool,
             "/exploration/set_enabled",
@@ -255,6 +261,7 @@ class FrontierExplorer(BasicNavigator):
         )
 
         self._publish_markers([], None)
+        self._set_exploration_complete(False)
         self.info("Frontier explorer initialized and waiting in idle mode.")
 
     def _map_callback(self, msg: OccupancyGrid) -> None:
@@ -280,6 +287,7 @@ class FrontierExplorer(BasicNavigator):
             self._encapsulation_cycles = 0
             self._cluster_failure_counts.clear()
             self._exhausted_clusters.clear()
+            self._set_exploration_complete(False)
             response.success = True
             response.message = "Exploration enabled."
             self.info("Exploration enabled by service call.")
@@ -288,6 +296,7 @@ class FrontierExplorer(BasicNavigator):
         self._enabled = False
         self._no_frontier_cycles = 0
         self._cancel_active_goal_requested = True
+        self._set_exploration_complete(False)
         self.info("Exploration disable was requested by service call.")
         response.success = True
         response.message = "Exploration disabled."
@@ -332,6 +341,7 @@ class FrontierExplorer(BasicNavigator):
             self._autostart_consumed = True
             self._enabled = True
             self._no_frontier_cycles = 0
+            self._set_exploration_complete(False)
             self.info("Autostart is enabled. Beginning exploration.")
 
     def _readiness_state(self) -> tuple[bool, str]:
@@ -401,7 +411,7 @@ class FrontierExplorer(BasicNavigator):
                         f"{encapsulation.unknown_hole_count} small unknown hole clusters "
                         f"(largest size {encapsulation.largest_unknown_hole_size})."
                     )
-                    self._disable_exploration(
+                    self._complete_exploration(
                         "Reachable space is enclosed; treating exploration as complete.",
                         clear_markers=True,
                     )
@@ -499,7 +509,7 @@ class FrontierExplorer(BasicNavigator):
             self._no_frontier_cycles += 1
             if self._no_frontier_cycles >= self.completion_patience_cycles:
                 self.info("No valid frontiers remain. Exploration is complete.")
-                self._disable_exploration(
+                self._complete_exploration(
                     "Exploration completed successfully.",
                     clear_markers=True,
                 )
@@ -706,6 +716,15 @@ class FrontierExplorer(BasicNavigator):
         if clear_markers:
             self._publish_markers([], None)
         self.info(message)
+
+    def _complete_exploration(self, message: str, clear_markers: bool) -> None:
+        self._set_exploration_complete(True)
+        self._disable_exploration(message, clear_markers)
+
+    def _set_exploration_complete(self, completed: bool) -> None:
+        msg = Bool()
+        msg.data = completed
+        self._completion_publisher.publish(msg)
 
     def _lookup_robot_pose(self) -> PoseStamped | None:
         try:

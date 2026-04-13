@@ -85,6 +85,12 @@ def generate_launch_description():
     declare_frontier = DeclareLaunchArgument(
         "use_frontier", default_value="True", description="enable frontier nodes or not"
     )
+    use_post_traversal = LaunchConfiguration("use_post_traversal")
+    declare_post_traversal = DeclareLaunchArgument(
+        "use_post_traversal",
+        default_value="True",
+        description="enable post-exploration traversal nodes or not",
+    )
     frontier_dir = get_package_share_directory("g3g_frontier_exploration")
     frontier_launch_file = os.path.join(
         frontier_dir, "launch", "frontier_exploration.launch.py"
@@ -98,6 +104,7 @@ def generate_launch_description():
         launch_arguments={
             "autostart": "False",
             "params_file": default_frontier_params_file,
+            "use_post_traversal": use_post_traversal,
         }.items(),
     )
 
@@ -107,6 +114,7 @@ def generate_launch_description():
     ld.add_action(declare_nav2)
     ld.add_action(declare_rviz)
     ld.add_action(declare_frontier)
+    ld.add_action(declare_post_traversal)
 
     ld.add_action(tb3_cartographer_launch_action)
     ld.add_action(nav2_launch_action)

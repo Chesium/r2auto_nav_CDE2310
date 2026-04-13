@@ -68,6 +68,7 @@ def _build_explorer(current_map):
     explorer._readiness_state = lambda: (True, "ready")
     explorer._now_seconds = lambda: 0.0
     explorer._publish_markers = lambda clusters, active_goal: None
+    explorer._completion_publisher = SimpleNamespace(publish=lambda msg: None)
     explorer.info = lambda message: None
     explorer.warn = lambda message: None
     explorer.debug = lambda message: None
@@ -188,3 +189,20 @@ def test_planning_tick_resets_encapsulation_counter_when_condition_clears(monkey
     explorer._planning_tick()
 
     assert explorer._encapsulation_cycles == 0
+
+
+def test_complete_exploration_publishes_completion_signal():
+    explorer = _build_explorer(_make_map([0], width=1, height=1))
+    published = []
+    disabled = []
+    explorer._completion_publisher = SimpleNamespace(
+        publish=lambda msg: published.append(msg.data)
+    )
+    explorer._disable_exploration = lambda message, clear_markers: disabled.append(
+        (message, clear_markers)
+    )
+
+    explorer._complete_exploration("Exploration completed successfully.", True)
+
+    assert published == [True]
+    assert disabled == [("Exploration completed successfully.", True)]

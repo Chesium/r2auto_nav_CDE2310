@@ -12,10 +12,10 @@ SELF_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 WS="$SELF_DIR/.."
 SETUP_CMD="source $WS/install/setup.bash"
 
-CMD_A="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False use_frontier:=False"
-CMD_B="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True use_frontier:=False"
-CMD_C="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False  use_rviz:=False use_frontier:=True"
-CMD_D="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False use_frontier:=False"
+CMD_A="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=True  use_nav2:=False use_rviz:=False use_frontier:=False use_post_traversal:=False"
+CMD_B="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False use_rviz:=True use_frontier:=False use_post_traversal:=False"
+CMD_C="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=False  use_rviz:=False use_frontier:=True use_post_traversal:=True"
+CMD_D="cd $WS && $SETUP_CMD && ros2 launch g3nav2 g3nav2_bringup_launch.py use_slam:=False use_nav2:=True  use_rviz:=False use_frontier:=False use_post_traversal:=False"
 # -----------------------------------
 
 # whether to auto-run commands:

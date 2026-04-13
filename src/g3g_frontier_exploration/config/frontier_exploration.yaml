@@ -29,3 +29,39 @@ frontier_explorer:
     blacklist_ttl_sec: 15.0
     completion_patience_cycles: 5
     autostart: false
+
+post_exploration_traverser:
+  ros__parameters:
+    map_topic: /map
+    exploration_complete_topic: /exploration_complete
+    exploration_enable_service: /exploration/set_enabled
+    global_frame: map
+    robot_base_frame: base_link
+    occupied_threshold: 56
+    autostart_after_exploration_complete: true
+    planning_rate_hz: 0.5
+    progress_rate_hz: 2.0
+    goal_timeout_sec: 45.0
+    sample_spacing: 1.25
+    min_goal_distance: 1.0
+    max_path_evaluations: 24
+    candidate_clearance_radius: 4
+    clearance_lookup_radius: 8
+    viewpoint_window_radius_cells: 8
+    occupied_view_weight: 1.0
+    unknown_view_weight: 2.5
+    clearance_weight: 0.35
+    path_length_weight: 0.8
+    revisit_ttl_sec: 180.0
+    failed_goal_ttl_sec: 60.0
+    revisit_position_resolution: 0.75
+    heading_search_radius_cells: 12
+    frontier_reactivation_enabled: true
+    frontier_reactivation_cycles: 3
+    frontier_min_cluster_size: 8
+    frontier_candidate_clearance_radius: 1
+    frontier_window_radius_cells: 2
+    min_frontier_free_neighbors: 3
+    max_frontier_occupied_ratio: 0.45
+    min_reachable_unknown_cells: 3
+    min_frontier_unknown_span: 2
