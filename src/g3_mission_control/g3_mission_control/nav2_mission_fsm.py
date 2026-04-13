@@ -68,7 +68,7 @@ class Nav2MissionFSM(Node):
         # ── Parameters ────────────────────────────────────────────────────
         self.declare_parameter("dock_pose_topic", "/detected_dock_pose")
         self.declare_parameter("dock_type", "aruco_dock")
-        self.declare_parameter("navigate_to_staging_pose", False)
+        self.declare_parameter("navigate_to_staging_pose", True)
 
         dock_pose_topic = self.get_parameter("dock_pose_topic").value
         self._dock_type = self.get_parameter("dock_type").value
@@ -77,6 +77,7 @@ class Nav2MissionFSM(Node):
         # ── State ─────────────────────────────────────────────────────────
         self._state: State = State.INIT
         self._explore_entered: bool = False
+        self._explore_confirmed: bool = False
         self._dock_entered: bool = False
 
         # ── Detection flag + pose (written by subscription callback only) ─
@@ -129,7 +130,7 @@ class Nav2MissionFSM(Node):
         # This avoids switching out of EXPLORE when the marker is first
         # glimpsed from far away — let the explorer drive closer first.
         marker_dist = msg.pose.position.z  # Z = forward in camera optical frame
-        if marker_dist <= 0.0 or marker_dist > 2.0:
+        if marker_dist <= 0.0 or marker_dist > 4.0:
             return
 
         # Get the robot's current pose in the map frame.
@@ -170,11 +171,12 @@ class Nav2MissionFSM(Node):
         pose.pose.position.x = dock_x
         pose.pose.position.y = dock_y
         pose.pose.position.z = 0.0
-        # Dock orientation = robot faces the marker, so rotate 180 from robot heading
-        # (the dock "faces" back toward the robot)
-        dock_yaw = yaw + math.pi
-        pose.pose.orientation.z = math.sin(dock_yaw / 2.0)
-        pose.pose.orientation.w = math.cos(dock_yaw / 2.0)
+        # Dock orientation = the direction the robot approaches FROM.
+        # The robot is facing the marker along its heading (yaw), so the
+        # dock's yaw should match the robot's current heading — this tells
+        # the docking_server "approach from this direction."
+        pose.pose.orientation.z = math.sin(yaw / 2.0)
+        pose.pose.orientation.w = math.cos(yaw / 2.0)
 
         self._marker_map_pose = pose
         self._marker_detected = True
@@ -216,12 +218,15 @@ class Nav2MissionFSM(Node):
         )
 
     def _handle_explore(self) -> None:
-        if not self._explore_entered:
-            self._set_exploration(True)
-            self._explore_entered = True
-            self.get_logger().info(
-                "EXPLORE: exploration enabled, watching for marker detection"
-            )
+        if not self._explore_confirmed:
+            if not self._explore_entered:
+                self._set_exploration(True)
+                self._explore_entered = True
+                self.get_logger().info(
+                    "EXPLORE: exploration enable requested, watching for marker detection",
+                    throttle_duration_sec=5.0,
+                )
+            return  # wait for confirmation before watching marker
 
         if self._marker_detected:
             self._transition_to(State.DOCK)
@@ -257,6 +262,7 @@ class Nav2MissionFSM(Node):
                     self._dock_succeeded = False
                     self._dock_entered = False
                     self._explore_entered = False
+                    self._explore_confirmed = False
                     self._transition_to(State.EXPLORE)
 
     # ═══════════════════════════ HELPERS ══════════════════════════════════
@@ -270,8 +276,25 @@ class Nav2MissionFSM(Node):
         request.data = enabled
         future = self._explore_client.call_async(request)
         future.add_done_callback(
-            lambda f: self._log_service_response(f, f"set_exploration({enabled})")
+            lambda f: self._exploration_response_cb(f, enabled)
         )
+
+    def _exploration_response_cb(self, future, enabled: bool) -> None:
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(f"set_exploration({enabled}) -> OK: {response.message}")
+                if enabled:
+                    self._explore_confirmed = True
+            else:
+                self.get_logger().warn(
+                    f"set_exploration({enabled}) -> FAIL: {response.message} — will retry"
+                )
+                # Reset so _handle_explore retries on next tick
+                self._explore_entered = False
+        except Exception as exc:
+            self.get_logger().error(f"set_exploration({enabled}) service error: {exc}")
+            self._explore_entered = False
 
     def _send_dock_goal(self) -> None:
         """Send a DockRobot action goal to Nav2's docking_server."""

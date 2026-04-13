@@ -167,7 +167,7 @@ class ArucoDockPosePublisher(Node):
 
         if pose is not None:
             out = PoseStamped()
-            out.header.stamp = msg.header.stamp  # freshness matters to docking_server
+            out.header.stamp = self.get_clock().now().to_msg()  # use node clock for TF + freshness
             out.header.frame_id = (
                 self._output_frame_override or msg.header.frame_id
             )
@@ -240,16 +240,10 @@ class ArucoDockPosePublisher(Node):
                 return None  # marker behind camera → bogus
 
             translation = tvec.flatten()
-            # Offset target toward camera so robot stops
-            # dock_offset_z meters in front of the marker.
-            # Camera optical frame: Z = depth (forward).
-            translation[2] = max(0.01, translation[2] - self._dock_offset_z)
-            # Don't use solvePnP orientation — it encodes the marker's
-            # own frame which confuses the docking controller.  Instead
-            # compute a "face the marker" orientation: dock X-axis
-            # points from camera toward the marker in the camera optical
-            # frame's XZ plane (Z = forward, X = right).
-            quaternion = _approach_quaternion(translation)
+            # Use the real solvePnP orientation — the docking_server
+            # handles frame transforms via TF and zeros out roll/pitch
+            # internally, so we should give it the true marker orientation.
+            quaternion = _rvec_to_quaternion(rvec)
             return translation, quaternion
 
         return None
