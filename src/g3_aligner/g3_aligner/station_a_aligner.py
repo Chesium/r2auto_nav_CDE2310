@@ -36,7 +36,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from sensor_msgs.msg import Image, CompressedImage
 from std_msgs.msg import Int32, Bool
 from geometry_msgs.msg import Twist
-from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, SetBool
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
@@ -55,6 +55,7 @@ class HoughDetectorStationA(Node):
         self.ALIGN_STABLE_FRAMES = 5      # consecutive aligned frames before notifying FSM
         self.align_stable_count  = 0
         self.notified            = False  # service called only once per alignment
+        self.enabled             = False  # FSM enables via /aligner_a/set_enabled
 
         # ── Hough params — tuned for 22–38 cm distance, camera rotated 90° ─
         self.DP       = 1.2
@@ -105,6 +106,9 @@ class HoughDetectorStationA(Node):
         # ── Service client: notify FSM once when stably aligned ───────────
         self.notify_client = self.create_client(Trigger, "/receptacle/notify_aligned")
 
+        # ── Service server: FSM enables/disables this node ────────────────
+        self.create_service(SetBool, "/aligner_a/set_enabled", self.handle_set_enabled)
+
         self.get_logger().info("=" * 60)
         self.get_logger().info("STATION A ALIGNER — Y-axis, FSM fires via service")
         self.get_logger().info("=" * 60)
@@ -114,8 +118,24 @@ class HoughDetectorStationA(Node):
                                f"stable={self.ALIGN_STABLE_FRAMES}f")
         self.get_logger().info("=" * 60)
 
+    # ── Enable/disable service ────────────────────────────────────────────────
+    def handle_set_enabled(self, request, response):
+        self.enabled = request.data
+        if not self.enabled:
+            self.align_stable_count = 0
+            self.notified = False
+            self.confirmed = False
+            self.ema_cy = None
+            self.consecutive_hits = 0
+        self.get_logger().info(f"Aligner A {'ENABLED' if self.enabled else 'DISABLED'}")
+        response.success = True
+        return response
+
     # ── Image callback ─────────────────────────────────────────────────────────
     def image_callback(self, msg):
+        if not self.enabled:
+            return
+
         self.frame_count += 1
         if self.frame_count == 1:
             self.get_logger().info("✓ First frame received")
