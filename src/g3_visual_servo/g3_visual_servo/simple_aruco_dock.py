@@ -87,6 +87,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("dictionary", "DICT_4X4_100")
         self.declare_parameter("dock_distance", 0.30)
         self.declare_parameter("dist_tolerance", 0.04)
+        self.declare_parameter("camera_forward_offset", 0.0)
         self.declare_parameter("bearing_tolerance_deg", 3.0)
         self.declare_parameter("dwell_frames", 5)
         self.declare_parameter("approach_timeout", 300.0)
@@ -112,6 +113,7 @@ class SimpleArucoDock(Node):
         dict_name = str(self.get_parameter("dictionary").value)
         self._dock_dist = float(self.get_parameter("dock_distance").value)
         self._dist_tol = float(self.get_parameter("dist_tolerance").value)
+        self._cam_forward_offset = float(self.get_parameter("camera_forward_offset").value)
         self._bearing_tol = math.radians(float(self.get_parameter("bearing_tolerance_deg").value))
         self._final_heading_offset = math.radians(float(self.get_parameter("final_heading_offset_deg").value))
         self._post_turn_speed = float(self.get_parameter("post_turn_speed").value)
@@ -143,6 +145,7 @@ class SimpleArucoDock(Node):
         self._state = _State.IDLE
         self._bearing_ema: float | None = None
         self._distance_ema: float | None = None
+        self._last_distance_cam: float | None = None
         self._normal_yaw: float | None = None
         self._pending_turn_angle: float | None = None
         self._integral = 0.0
@@ -186,6 +189,7 @@ class SimpleArucoDock(Node):
         self._state = _State.APPROACHING
         self._bearing_ema = None
         self._distance_ema = None
+        self._last_distance_cam = None
         self._normal_yaw = None
         self._pending_turn_angle = None
         self._integral = 0.0
@@ -271,7 +275,9 @@ class SimpleArucoDock(Node):
                 return None
             t = tvec.flatten()
             bearing = float(math.atan2(t[0], t[2]))
-            distance = float(t[2])
+            distance_cam = float(t[2])
+            distance = max(distance_cam - self._cam_forward_offset, 0.0)
+            self._last_distance_cam = distance_cam
             return bearing, distance, corners, ids, rvec, tvec
         return None
 
@@ -314,9 +320,8 @@ class SimpleArucoDock(Node):
 
             normal_yaw = self._marker_normal_yaw(rvec)
             self._normal_yaw = normal_yaw
-            self._pending_turn_angle = _wrap_angle(
-                self._normal_yaw - self._final_heading_offset
-            )
+            turn_error = _wrap_angle(self._normal_yaw - self._final_heading_offset)
+            self._pending_turn_angle = abs(turn_error)
 
             dist_err = self._distance_ema - self._dock_dist
             holding_position = self._distance_ema <= self._dock_dist + self._dist_tol
@@ -361,9 +366,12 @@ class SimpleArucoDock(Node):
 
             self._send_cmd(linear_x, angular_z)
 
+            cam_dist = self._last_distance_cam if self._last_distance_cam is not None else float("nan")
+
             # Debug
             dbg = (
                 f"d={self._distance_ema:.3f} raw={distance_raw:.3f} "
+                f"cam={cam_dist:.3f} "
                 f"b={math.degrees(self._bearing_ema):+.1f} "
                 f"n={math.degrees(self._normal_yaw or 0.0):+.1f} "
                 f"err={dist_err:+.3f} cmd=({linear_x:.3f},{angular_z:.3f}) "
@@ -373,11 +381,11 @@ class SimpleArucoDock(Node):
 
             # Text overlay on debug image
             cv2.putText(debug_frame, f"d={self._distance_ema:.2f}m b={math.degrees(self._bearing_ema):+.1f}deg",
-                        (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            cv2.putText(debug_frame, f"n={math.degrees(self._normal_yaw or 0.0):+.1f}deg err={dist_err:+.3f}",
-                        (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-            cv2.putText(debug_frame, f"dwell={self._dwell_count}/{self._dwell_frames}",
-                        (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1)
+                        (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 255, 0), 2)
+            cv2.putText(debug_frame, f"cam={cam_dist:.2f}m n={math.degrees(self._normal_yaw or 0.0):+.1f}deg",
+                        (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
+            cv2.putText(debug_frame, f"err={dist_err:+.3f} dwell={self._dwell_count}/{self._dwell_frames}",
+                        (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(debug_frame, self._state.name,
                         (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         else:
@@ -435,7 +443,7 @@ class SimpleArucoDock(Node):
     def _start_post_turn(self) -> None:
         if self._post_turn_speed <= 0.0:
             return
-        angle = abs(self._pending_turn_angle) if self._pending_turn_angle is not None else None
+        angle = self._pending_turn_angle
         if angle is None or angle < self._post_turn_min_angle:
             return
         duration = angle / self._post_turn_speed
@@ -443,7 +451,7 @@ class SimpleArucoDock(Node):
         if self._post_turn_timer is None:
             self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
         self.get_logger().info(
-            f"Post-dock clockwise turn: {math.degrees(angle):.1f}deg at {math.degrees(self._post_turn_speed):.1f}deg/s"
+            f"Post-dock anticlockwise turn: {math.degrees(angle):.1f}deg at {math.degrees(self._post_turn_speed):.1f}deg/s"
         )
 
     def _post_turn_step(self) -> None:
@@ -456,13 +464,14 @@ class SimpleArucoDock(Node):
             self._cancel_post_turn()
             self.get_logger().info("Post-dock turn complete")
         else:
-            self._send_cmd(0.0, -abs(self._post_turn_speed))
+            self._send_cmd(0.0, abs(self._post_turn_speed))
 
     def _cancel_post_turn(self) -> None:
         if self._post_turn_timer is not None:
             self._post_turn_timer.cancel()
             self._post_turn_timer = None
         self._post_turn_end_time = None
+        self._pending_turn_angle = None
 
 
 def main(args: list[str] | None = None) -> None:
