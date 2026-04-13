@@ -84,12 +84,12 @@ class SimpleArucoDock(Node):
         self.declare_parameter("dist_tolerance", 0.04)
         self.declare_parameter("bearing_tolerance_deg", 3.0)
         self.declare_parameter("dwell_frames", 5)
-        self.declare_parameter("approach_timeout", 30.0)
+        self.declare_parameter("approach_timeout", 300.0)
         self.declare_parameter("kp_angular", 1.2)
         self.declare_parameter("kp_linear", 0.5)
         self.declare_parameter("ki_linear", 0.08)
-        self.declare_parameter("max_linear", 0.15)
-        self.declare_parameter("max_angular", 0.8)
+        self.declare_parameter("max_linear", 0.02)
+        self.declare_parameter("max_angular", 0.05)
         self.declare_parameter("max_bearing_for_drive_deg", 15.0)
         self.declare_parameter("ema_alpha", 0.3)
         self.declare_parameter("lost_hold", 3)
@@ -252,7 +252,7 @@ class SimpleArucoDock(Node):
                 return None
             t = tvec.flatten()
             bearing = float(math.atan2(t[0], t[2]))
-            distance = float(np.linalg.norm(t))
+            distance = float(t[2])
             return bearing, distance, corners, ids, rvec, tvec
         return None
 
@@ -286,6 +286,7 @@ class SimpleArucoDock(Node):
                 self._distance_ema = a * distance_raw + (1 - a) * self._distance_ema
 
             dist_err = self._distance_ema - self._dock_dist
+            holding_position = self._distance_ema <= self._dock_dist + self._dist_tol
 
             # Check done FIRST — before any control output
             # Use raw distance too (not just EMA) to catch overshoot
@@ -301,37 +302,27 @@ class SimpleArucoDock(Node):
             else:
                 self._dwell_count = 0
 
-            # If we're already at or past the dock distance, STOP immediately
-            if self._distance_ema <= self._dock_dist + self._dist_tol:
-                self._send_cmd(0.0, 0.0)
-                dbg = (
-                    f"d={self._distance_ema:.3f} raw={distance_raw:.3f} "
-                    f"b={math.degrees(self._bearing_ema):+.1f} "
-                    f"HOLDING — at dock dist, dwell={self._dwell_count}/{self._dwell_frames}"
-                )
-                self._debug_pub.publish(String(data=dbg))
-                cv2.putText(debug_frame, f"HOLDING d={self._distance_ema:.2f}m dwell={self._dwell_count}/{self._dwell_frames}",
-                            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                self._publish_debug_image(debug_frame)
-                return
-
-            # Integral (distance only, only accumulate when far)
-            self._integral += dist_err * (1.0 / 30.0)
-            max_int = 0.10 / max(self._ki_lin, 1e-6)
-            self._integral = float(np.clip(self._integral, -max_int, max_int))
-
-            # Control
             angular_z = float(np.clip(
                 -self._kp_ang * self._bearing_ema, -self._max_ang, self._max_ang
             ))
 
-            if abs(self._bearing_ema) < self._max_bearing:
-                linear_x = float(np.clip(
-                    self._kp_lin * dist_err + self._ki_lin * self._integral,
-                    0.0, self._max_lin,
-                ))
-            else:
+            if holding_position:
                 linear_x = 0.0
+                self._integral = 0.0
+            else:
+                # Integral (distance only) with basic anti-windup
+                integrate = abs(self._bearing_ema) < self._max_bearing
+                new_integral = self._integral
+                if integrate:
+                    new_integral += dist_err * (1.0 / 30.0)
+                    max_int = 0.10 / max(self._ki_lin, 1e-6)
+                    new_integral = float(np.clip(new_integral, -max_int, max_int))
+
+                pi_cmd = self._kp_lin * dist_err + self._ki_lin * (new_integral if integrate else self._integral)
+                linear_x = float(np.clip(pi_cmd, 0.0, self._max_lin))
+
+                if integrate and 0.0 < linear_x < self._max_lin:
+                    self._integral = new_integral
 
             self._send_cmd(linear_x, angular_z)
 
@@ -340,7 +331,7 @@ class SimpleArucoDock(Node):
                 f"d={self._distance_ema:.3f} raw={distance_raw:.3f} "
                 f"b={math.degrees(self._bearing_ema):+.1f} "
                 f"err={dist_err:+.3f} cmd=({linear_x:.3f},{angular_z:.3f}) "
-                f"dwell={self._dwell_count}/{self._dwell_frames}"
+                f"hold={holding_position} dwell={self._dwell_count}/{self._dwell_frames}"
             )
             self._debug_pub.publish(String(data=dbg))
 
