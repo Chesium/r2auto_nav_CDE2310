@@ -35,6 +35,11 @@ def _marker_object_points(size: float) -> np.ndarray:
     )
 
 
+def _wrap_angle(rad: float) -> float:
+    """Wrap angle to [-pi, pi)."""
+    return (rad + math.pi) % (2 * math.pi) - math.pi
+
+
 # ── OpenCV compat shims ─────────────────────────────────────────────────────
 
 def _get_dictionary(name: str):
@@ -95,6 +100,9 @@ class SimpleArucoDock(Node):
         self.declare_parameter("lost_hold", 3)
         self.declare_parameter("lost_stop", 10)
         self.declare_parameter("use_stamped_cmd_vel", False)
+        self.declare_parameter("final_heading_offset_deg", 0.0)
+        self.declare_parameter("post_turn_speed", 0.35)
+        self.declare_parameter("post_turn_min_angle_deg", 1.0)
 
         # Read parameters
         image_topic = str(self.get_parameter("image_topic").value)
@@ -105,6 +113,9 @@ class SimpleArucoDock(Node):
         self._dock_dist = float(self.get_parameter("dock_distance").value)
         self._dist_tol = float(self.get_parameter("dist_tolerance").value)
         self._bearing_tol = math.radians(float(self.get_parameter("bearing_tolerance_deg").value))
+        self._final_heading_offset = math.radians(float(self.get_parameter("final_heading_offset_deg").value))
+        self._post_turn_speed = float(self.get_parameter("post_turn_speed").value)
+        self._post_turn_min_angle = math.radians(float(self.get_parameter("post_turn_min_angle_deg").value))
         self._dwell_frames = int(self.get_parameter("dwell_frames").value)
         self._approach_timeout = float(self.get_parameter("approach_timeout").value)
         self._kp_ang = float(self.get_parameter("kp_angular").value)
@@ -132,10 +143,14 @@ class SimpleArucoDock(Node):
         self._state = _State.IDLE
         self._bearing_ema: float | None = None
         self._distance_ema: float | None = None
+        self._normal_yaw: float | None = None
+        self._pending_turn_angle: float | None = None
         self._integral = 0.0
         self._lost_count = 0
         self._dwell_count = 0
         self._approach_start: float | None = None
+        self._post_turn_timer = None
+        self._post_turn_end_time: float | None = None
 
         # ROS I/O
         self.create_subscription(CameraInfo, info_topic, self._info_cb, 10)
@@ -171,10 +186,13 @@ class SimpleArucoDock(Node):
         self._state = _State.APPROACHING
         self._bearing_ema = None
         self._distance_ema = None
+        self._normal_yaw = None
+        self._pending_turn_angle = None
         self._integral = 0.0
         self._lost_count = 0
         self._dwell_count = 0
         self._approach_start = self.get_clock().now().nanoseconds / 1e9
+        self._cancel_post_turn()
         resp.success = True
         resp.message = "Approaching marker"
         return resp
@@ -183,6 +201,7 @@ class SimpleArucoDock(Node):
         self._send_cmd(0.0, 0.0)
         self._state = _State.IDLE
         self.get_logger().info("Docking aborted by user.")
+        self._cancel_post_turn()
         resp.success = True
         resp.message = "Stopped"
         return resp
@@ -256,6 +275,14 @@ class SimpleArucoDock(Node):
             return bearing, distance, corners, ids, rvec, tvec
         return None
 
+    @staticmethod
+    def _marker_normal_yaw(rvec: np.ndarray) -> float:
+        """Yaw of marker plane normal in camera frame."""
+        rvec_c = np.ascontiguousarray(rvec, dtype=np.float64)
+        R, _ = cv2.Rodrigues(rvec_c)
+        normal = R[:, 2]
+        return float(math.atan2(normal[0], normal[2]))
+
     # ── main loop ────────────────────────────────────────────────────────
 
     def _process_frame_with_result(self, frame: np.ndarray, result) -> None:
@@ -285,13 +312,21 @@ class SimpleArucoDock(Node):
                 self._bearing_ema = a * bearing_raw + (1 - a) * self._bearing_ema
                 self._distance_ema = a * distance_raw + (1 - a) * self._distance_ema
 
+            normal_yaw = self._marker_normal_yaw(rvec)
+            self._normal_yaw = normal_yaw
+            self._pending_turn_angle = _wrap_angle(
+                self._normal_yaw - self._final_heading_offset
+            )
+
             dist_err = self._distance_ema - self._dock_dist
             holding_position = self._distance_ema <= self._dock_dist + self._dist_tol
+            bearing_err = self._bearing_ema
+            bearing_tol = self._bearing_tol
 
             # Check done FIRST — before any control output
             # Use raw distance too (not just EMA) to catch overshoot
             at_dist = abs(dist_err) < self._dist_tol or distance_raw <= self._dock_dist
-            at_bearing = abs(self._bearing_ema) < self._bearing_tol
+            at_bearing = abs(bearing_err) < bearing_tol
             if at_dist and at_bearing:
                 self._dwell_count += 1
                 if self._dwell_count >= self._dwell_frames:
@@ -303,7 +338,7 @@ class SimpleArucoDock(Node):
                 self._dwell_count = 0
 
             angular_z = float(np.clip(
-                -self._kp_ang * self._bearing_ema, -self._max_ang, self._max_ang
+                -self._kp_ang * bearing_err, -self._max_ang, self._max_ang
             ))
 
             if holding_position:
@@ -330,6 +365,7 @@ class SimpleArucoDock(Node):
             dbg = (
                 f"d={self._distance_ema:.3f} raw={distance_raw:.3f} "
                 f"b={math.degrees(self._bearing_ema):+.1f} "
+                f"n={math.degrees(self._normal_yaw or 0.0):+.1f} "
                 f"err={dist_err:+.3f} cmd=({linear_x:.3f},{angular_z:.3f}) "
                 f"hold={holding_position} dwell={self._dwell_count}/{self._dwell_frames}"
             )
@@ -338,8 +374,10 @@ class SimpleArucoDock(Node):
             # Text overlay on debug image
             cv2.putText(debug_frame, f"d={self._distance_ema:.2f}m b={math.degrees(self._bearing_ema):+.1f}deg",
                         (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            cv2.putText(debug_frame, f"err={dist_err:+.3f} dwell={self._dwell_count}/{self._dwell_frames}",
+            cv2.putText(debug_frame, f"n={math.degrees(self._normal_yaw or 0.0):+.1f}deg err={dist_err:+.3f}",
                         (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            cv2.putText(debug_frame, f"dwell={self._dwell_count}/{self._dwell_frames}",
+                        (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1)
             cv2.putText(debug_frame, self._state.name,
                         (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         else:
@@ -368,6 +406,8 @@ class SimpleArucoDock(Node):
         self._done_pub.publish(Bool(data=success))
         level = self.get_logger().info if success else self.get_logger().warn
         level(f"Docking {'DONE' if success else 'FAILED'}: {reason}")
+        if success:
+            self._start_post_turn()
 
     def _publish_debug_image(self, frame: np.ndarray) -> None:
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
@@ -389,6 +429,40 @@ class SimpleArucoDock(Node):
             cmd.linear.x = linear_x
             cmd.angular.z = angular_z
         self._cmd_pub.publish(cmd)
+
+    # ── post-dock turn --------------------------------------------------
+
+    def _start_post_turn(self) -> None:
+        if self._post_turn_speed <= 0.0:
+            return
+        angle = abs(self._pending_turn_angle) if self._pending_turn_angle is not None else None
+        if angle is None or angle < self._post_turn_min_angle:
+            return
+        duration = angle / self._post_turn_speed
+        self._post_turn_end_time = self.get_clock().now().nanoseconds / 1e9 + duration
+        if self._post_turn_timer is None:
+            self._post_turn_timer = self.create_timer(0.02, self._post_turn_step)
+        self.get_logger().info(
+            f"Post-dock clockwise turn: {math.degrees(angle):.1f}deg at {math.degrees(self._post_turn_speed):.1f}deg/s"
+        )
+
+    def _post_turn_step(self) -> None:
+        if self._post_turn_end_time is None:
+            self._cancel_post_turn()
+            return
+        now = self.get_clock().now().nanoseconds / 1e9
+        if now >= self._post_turn_end_time:
+            self._send_cmd(0.0, 0.0)
+            self._cancel_post_turn()
+            self.get_logger().info("Post-dock turn complete")
+        else:
+            self._send_cmd(0.0, -abs(self._post_turn_speed))
+
+    def _cancel_post_turn(self) -> None:
+        if self._post_turn_timer is not None:
+            self._post_turn_timer.cancel()
+            self._post_turn_timer = None
+        self._post_turn_end_time = None
 
 
 def main(args: list[str] | None = None) -> None:
