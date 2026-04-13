@@ -20,7 +20,7 @@ import rclpy
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist, TwistStamped
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
@@ -144,7 +144,7 @@ class SimpleArucoDock(Node):
         self._cmd_pub = self.create_publisher(cmd_type, "/cmd_vel", 10)
         self._done_pub = self.create_publisher(Bool, "/aruco_dock/done", 10)
         self._debug_pub = self.create_publisher(String, "/aruco_debug", 10)
-        self._debug_img_pub = self.create_publisher(Image, "/aruco_debug/image_raw", 10)
+        self._debug_img_pub = self.create_publisher(CompressedImage, "/aruco_debug/image_raw/compressed", 10)
 
         self.create_service(Trigger, "/simple_dock/start", self._start_cb)
         self.create_service(Trigger, "/simple_dock/stop", self._stop_cb)
@@ -292,7 +292,7 @@ class SimpleArucoDock(Node):
                 self._debug_pub.publish(String(data=dbg))
                 cv2.putText(debug_frame, f"HOLDING d={self._distance_ema:.2f}m dwell={self._dwell_count}/{self._dwell_frames}",
                             (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                self._debug_img_pub.publish(self._bridge.cv2_to_imgmsg(debug_frame, encoding="bgr8"))
+                self._publish_debug_image(debug_frame)
                 return
 
             # Integral (distance only, only accumulate when far)
@@ -347,7 +347,7 @@ class SimpleArucoDock(Node):
                         (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         # Publish debug image
-        self._debug_img_pub.publish(self._bridge.cv2_to_imgmsg(debug_frame, encoding="bgr8"))
+        self._publish_debug_image(debug_frame)
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -357,6 +357,14 @@ class SimpleArucoDock(Node):
         self._done_pub.publish(Bool(data=success))
         level = self.get_logger().info if success else self.get_logger().warn
         level(f"Docking {'DONE' if success else 'FAILED'}: {reason}")
+
+    def _publish_debug_image(self, frame: np.ndarray) -> None:
+        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        msg = CompressedImage()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.format = "jpeg"
+        msg.data = buf.tobytes()
+        self._debug_img_pub.publish(msg)
 
     def _send_cmd(self, linear_x: float, angular_z: float) -> None:
         if self._use_stamped:
