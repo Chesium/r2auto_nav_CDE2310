@@ -531,8 +531,7 @@ Terminal 1 — Nav2 + SLAM (no exploration):
   ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
 
   Terminal 2 — simple docking node:
-  ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p
-  camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
+  ros2 run g3_visual_servo simple_aruco_dock --ros-args -p image_topic:=/usb_cam/image_raw -p camera_info_topic:=/usb_cam/camera_info -p target_marker_id:=42 -p use_stamped_cmd_vel:=True
 
   Terminal 3 — Foxglove bridge:
   ros2 launch foxglove_bridge foxglove_bridge_launch.xml
