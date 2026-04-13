@@ -116,7 +116,8 @@ class SimpleArucoDock(Node):
         self.declare_parameter("lost_stop", 10)
         self.declare_parameter("use_stamped_cmd_vel", False)
         self.declare_parameter("final_heading_offset_deg", 0.0)
-        self.declare_parameter("post_turn_speed", 0.35)
+        self.declare_parameter("post_turn_speed", 0.12)
+        self.declare_parameter("post_turn_kp", 0.5)
         self.declare_parameter("post_turn_min_angle_deg", 1.0)
         self.declare_parameter("post_turn_yaw_tolerance_deg", 2.0)
 
@@ -133,6 +134,7 @@ class SimpleArucoDock(Node):
         self._bearing_tol = math.radians(float(self.get_parameter("bearing_tolerance_deg").value))
         self._final_heading_offset = math.radians(float(self.get_parameter("final_heading_offset_deg").value))
         self._post_turn_speed = float(self.get_parameter("post_turn_speed").value)
+        self._post_turn_kp = float(self.get_parameter("post_turn_kp").value)
         self._post_turn_min_angle = math.radians(float(self.get_parameter("post_turn_min_angle_deg").value))
         self._post_turn_yaw_tol = math.radians(float(self.get_parameter("post_turn_yaw_tolerance_deg").value))
         self._dwell_frames = int(self.get_parameter("dwell_frames").value)
@@ -505,7 +507,7 @@ class SimpleArucoDock(Node):
             self._cancel_post_turn()
             self.get_logger().info("Post-dock turn complete")
         else:
-            angular_z = float(np.clip(self._kp_ang * ccw_err, 0.0, self._post_turn_speed))
+            angular_z = float(np.clip(self._post_turn_kp * ccw_err, 0.0, self._post_turn_speed))
             self._send_cmd(0.0, angular_z)
 
     def _cancel_post_turn(self) -> None:
