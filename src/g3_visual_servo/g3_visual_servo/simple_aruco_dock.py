@@ -485,6 +485,7 @@ class SimpleArucoDock(Node):
 
             if holding_position:
                 linear_x = 0.0
+                angular_z = 0.0
                 self._integral = 0.0
             else:
                 # Integral (distance only) with basic anti-windup
