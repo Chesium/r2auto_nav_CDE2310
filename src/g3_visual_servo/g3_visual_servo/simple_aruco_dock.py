@@ -112,7 +112,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("dock_distance", 0.30)
         self.declare_parameter("dist_tolerance", 0.04)
         self.declare_parameter("camera_forward_offset", 0.08)
-        self.declare_parameter("bearing_tolerance_deg", 3.0)
+        self.declare_parameter("bearing_tolerance_deg", 15.0)
         self.declare_parameter("dwell_frames", 5)
         self.declare_parameter("approach_timeout", 300.0)
         self.declare_parameter("kp_angular", 1.2)
