@@ -562,14 +562,13 @@ class SimpleArucoDock(Node):
     def _finish(self, *, success: bool, reason: str) -> None:
         self._send_cmd(0.0, 0.0)
         self._state = _State.DONE if success else _State.FAILED
-        self._done_pub.publish(Bool(data=success))
         msg = f"Docking {'DONE' if success else 'FAILED'}: {reason}"
         if success:
             self.get_logger().info(msg)
+            self._start_post_turn()
         else:
             self.get_logger().warning(msg)
-        if success:
-            self._start_post_turn()
+            self._done_pub.publish(Bool(data=False))
 
     def _publish_debug_image(self, frame: np.ndarray) -> None:
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
@@ -596,9 +595,11 @@ class SimpleArucoDock(Node):
 
     def _start_post_turn(self) -> None:
         if self._post_turn_speed <= 0.0:
+            self._start_post_shift()
             return
         if self._odom_yaw is None or self._normal_yaw is None:
             self.get_logger().warning("Skipping post-dock turn: missing odom yaw or marker normal")
+            self._start_post_shift()
             return
         # Compute turn in camera frame: how much CCW rotation brings the
         # marker normal (n) to the desired target angle, then apply the same
@@ -612,6 +613,7 @@ class SimpleArucoDock(Node):
         target_n = self._final_heading_offset
         angle = _ccw_angle(_angle_0_2pi(n), _angle_0_2pi(target_n))
         if angle < self._post_turn_min_angle:
+            self._start_post_shift()
             return
         self._post_turn_angle = angle
         self._post_turn_target_yaw = _wrap_angle(self._odom_yaw + angle)
@@ -657,14 +659,21 @@ class SimpleArucoDock(Node):
 
     # ── post-dock shift -------------------------------------------------
 
+    def _publish_done(self) -> None:
+        self.get_logger().info("Post-dock sequence complete — publishing done")
+        self._done_pub.publish(Bool(data=True))
+
     def _start_post_shift(self) -> None:
         if self._post_shift_speed <= 0.0:
+            self._publish_done()
             return
         if self._last_lateral_offset is None:
             self.get_logger().warning("Skipping post-dock shift: no lateral offset available")
+            self._publish_done()
             return
         if self._odom_x is None or self._odom_y is None:
             self.get_logger().warning("Skipping post-dock shift: no odom position received yet")
+            self._publish_done()
             return
         # The camera is cam_forward_offset (r) ahead of the pivot point.
         # After turning by angle `a` (CCW), the camera sweeps an arc and
@@ -682,6 +691,7 @@ class SimpleArucoDock(Node):
         self._post_shift_target_dist = -x * math.sin(a) - r * (1.0 - math.cos(a))
         if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
             self._post_shift_target_dist = None
+            self._publish_done()
             return
         self._post_shift_start_x = self._odom_x
         self._post_shift_start_y = self._odom_y
@@ -724,6 +734,7 @@ class SimpleArucoDock(Node):
             self._send_cmd(0.0, 0.0)
             self._cancel_post_shift()
             self.get_logger().info("Post-dock shift complete")
+            self._done_pub.publish(Bool(data=True))
         else:
             linear_x = math.copysign(self._post_shift_speed, remaining)
             self._send_cmd(linear_x, 0.0)

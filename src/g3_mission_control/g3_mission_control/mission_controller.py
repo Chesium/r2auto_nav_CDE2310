@@ -422,11 +422,9 @@ class WarehouseMissionController(Node):
             elapsed = time.time() - (self._dock_start_time or time.time())
             self.aruco_dock_done = False
             self._dock_started = False
-            # Stop any post-dock maneuvers before handing off to aligner
-            self._call_dock_scan()
             self.get_logger().info(
-                f"[DOCK_{sid}] ArUco dock COMPLETE after {elapsed:.1f}s — "
-                f"cancelling post-turn, transitioning to ALIGN_AT_{sid}")
+                f"[DOCK_{sid}] ArUco dock + post-dock COMPLETE after {elapsed:.1f}s — "
+                f"transitioning to ALIGN_AT_{sid}")
             self.transition_to(self.get_align_state(sid))
 
     def _dock_service_response(self, future, sid):
