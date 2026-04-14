@@ -468,8 +468,7 @@ class SimpleArucoDock(Node):
             # Check done FIRST — before any control output
             # Use raw distance too (not just EMA) to catch overshoot
             at_dist = abs(dist_err) < self._dist_tol or distance_raw <= self._dock_dist
-            at_bearing = abs(bearing_err) < bearing_tol
-            if at_dist and at_bearing:
+            if at_dist:
                 self._dwell_count += 1
                 if self._dwell_count >= self._dwell_frames:
                     self._finish(success=True,
