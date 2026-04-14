@@ -663,9 +663,12 @@ class SimpleArucoDock(Node):
             self.get_logger().warning("Skipping post-dock shift: no odom position received yet")
             self._publish_done()
             return
-        # Shift by the lateral offset between camera and marker (tvec[0]).
-        # After the post-turn, this aligns the robot with the marker.
-        self._post_shift_target_dist = self._last_lateral_offset
+        # Shift so the camera ends up at the marker's position.
+        # x = lateral offset (tvec[0]), a = turn angle, r = camera pivot offset.
+        a = self._post_turn_angle
+        x = self._last_lateral_offset
+        r = self._cam_forward_offset
+        self._post_shift_target_dist = -x * math.sin(a) - r * (1.0 - math.cos(a))
         if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
             self._post_shift_target_dist = None
             self._publish_done()
@@ -675,7 +678,8 @@ class SimpleArucoDock(Node):
         if self._post_shift_timer is None:
             self._post_shift_timer = self.create_timer(0.02, self._post_shift_step)
         self.get_logger().info(
-            f"Post-dock shift: lateral_offset={self._last_lateral_offset:+.3f}m "
+            f"Post-dock shift: x={x:+.3f}m r={r:.3f}m "
+            f"a={math.degrees(a):.0f}deg "
             f"move={self._post_shift_target_dist:+.3f}m"
         )
 
