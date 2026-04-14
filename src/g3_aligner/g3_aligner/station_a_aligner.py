@@ -82,7 +82,8 @@ class HoughDetectorStationA(Node):
 
         # ── General ────────────────────────────────────────────────────────
         self.bridge      = CvBridge()
-        self.frame_count = 0
+        self.frame_count   = 0
+        self.sweep_counter = 0
 
         # ── QoS: depth=2 prevents frame queue pile-up on RPi ──────────────
         cam_qos = QoSProfile(
@@ -127,6 +128,7 @@ class HoughDetectorStationA(Node):
             self.confirmed = False
             self.ema_cy = None
             self.consecutive_hits = 0
+            self.sweep_counter = 0
         self.get_logger().info(f"Aligner A {'ENABLED' if self.enabled else 'DISABLED'}")
         response.success = True
         return response
@@ -159,6 +161,7 @@ class HoughDetectorStationA(Node):
             self.consecutive_hits += 1
             if self.consecutive_hits >= self.CONFIRM_FRAMES:
                 self.confirmed = True
+                self.sweep_counter = 0
         else:
             self.consecutive_hits = max(0, self.consecutive_hits - 1)
             if self.consecutive_hits == 0:
@@ -226,6 +229,19 @@ class HoughDetectorStationA(Node):
                     f"hits={self.consecutive_hits}")
 
         else:
+            # Sweep oscillation when no circle confirmed and camera warmed up
+            if self.frame_count > 30:
+                if self.sweep_counter < 75:
+                    cmd.linear.x = 0.03       # forward 2.5s
+                elif self.sweep_counter < 225:
+                    cmd.linear.x = -0.03      # backward 5s
+                elif self.sweep_counter < 375:
+                    cmd.linear.x = 0.03       # forward 5s
+                else:
+                    self.sweep_counter = -1    # will become 0 after increment
+                cmd.angular.z = 0.0
+                self.sweep_counter += 1
+
             cv2.putText(annotated, "NO RECEPTACLE DETECTED",
                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2)
 
