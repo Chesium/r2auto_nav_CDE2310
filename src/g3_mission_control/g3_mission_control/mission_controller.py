@@ -236,25 +236,8 @@ class WarehouseMissionController(Node):
         return response
 
     def aruco_dock_done_callback(self, msg):
-        """Only accept when FSM is actually in a DOCK state."""
-        if self.state not in [MissionState.DOCK_AT_A, MissionState.DOCK_AT_B]:
-            self.get_logger().debug(
-                f"[CB] /aruco_dock/done received (data={msg.data}) but "
-                f"state={self.state} — IGNORING stale message")
-            return
         if msg.data:
-            if not self.aruco_dock_done:
-                elapsed = time.time() - (self._dock_start_time or time.time())
-                self.aruco_dock_done = True
-                self.get_logger().info(
-                    f"[CB] ArUco docking SUCCEEDED after {elapsed:.1f}s | state={self.state}")
-            else:
-                self.get_logger().debug(
-                    "[CB] /aruco_dock/done=True received but already flagged")
-        else:
-            self.get_logger().warn(
-                f"[CB] /aruco_dock/done=False received | state={self.state} — dock FAILED")
-            self.aruco_dock_done = True  # let handle_dock pick up the failure
+            self.aruco_dock_done = True
 
     def b_done_callback(self, msg):
         self.get_logger().info(
@@ -382,60 +365,19 @@ class WarehouseMissionController(Node):
             self.transition_to(MissionState.COMPLETE)
 
     def handle_dock(self, sid):
-        """Trigger dock service on entry, then wait for /aruco_dock/done."""
+        """Call dock service once, then just wait for done."""
         if not self._dock_started:
             self.aruco_dock_done = False
-            self._dock_start_time = time.time()
             client = self.dock_to_a_client if sid == "A" else self.dock_to_b_client
             if client.service_is_ready():
-                self.get_logger().info(
-                    f"[DOCK_{sid}] Calling /aruco_dock/dock_to_{sid.lower()} — "
-                    f"visual servo approach starting")
-                future = client.call_async(Trigger.Request())
-                future.add_done_callback(
-                    lambda f, s=sid: self._dock_service_response(f, s)
-                )
+                client.call_async(Trigger.Request())
                 self._dock_started = True
-            else:
-                self.get_logger().warn(
-                    f"[DOCK_{sid}] Service /aruco_dock/dock_to_{sid.lower()} "
-                    f"NOT READY — will retry next tick",
-                    throttle_duration_sec=2.0,
-                )
             return
 
-        # Periodic waiting log
-        if self._dock_start_time:
-            elapsed = time.time() - self._dock_start_time
-            if int(elapsed * 10) % 100 == 0 and elapsed > 0:  # every 10s
-                self.get_logger().info(
-                    f"[DOCK_{sid}] Waiting for visual servo... {elapsed:.0f}s elapsed | "
-                    f"dock_done={self.aruco_dock_done}")
-
         if self.aruco_dock_done:
-            elapsed = time.time() - (self._dock_start_time or time.time())
             self.aruco_dock_done = False
             self._dock_started = False
-            self.get_logger().info(
-                f"[DOCK_{sid}] ArUco dock + post-dock COMPLETE after {elapsed:.1f}s — "
-                f"transitioning to ALIGN_AT_{sid}")
             self.transition_to(self.get_align_state(sid))
-
-    def _dock_service_response(self, future, sid):
-        try:
-            resp = future.result()
-            if resp.success:
-                self.get_logger().info(
-                    f"[DOCK_{sid}] Service ACCEPTED: {resp.message}")
-            else:
-                self.get_logger().error(
-                    f"[DOCK_{sid}] Service REJECTED: {resp.message} — "
-                    f"will trigger failure path")
-                self.aruco_dock_done = True
-        except Exception as e:
-            self.get_logger().error(
-                f"[DOCK_{sid}] Service call EXCEPTION: {e} — will trigger failure path")
-            self.aruco_dock_done = True
 
     def handle_alignment(self):
         """Station A: wait for /receptacle/notify_aligned service call."""
