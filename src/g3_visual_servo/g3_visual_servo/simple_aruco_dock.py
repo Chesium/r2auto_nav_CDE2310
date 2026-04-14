@@ -566,8 +566,6 @@ class SimpleArucoDock(Node):
         self._debug_img_pub.publish(msg)
 
     def _send_cmd(self, linear_x: float, angular_z: float) -> None:
-        # Negate linear to match physical robot direction (camera/motor convention)
-        linear_x = -linear_x
         if self._use_stamped:
             cmd = TwistStamped()
             cmd.header.stamp = self.get_clock().now().to_msg()
