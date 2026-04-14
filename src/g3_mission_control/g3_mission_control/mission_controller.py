@@ -188,29 +188,23 @@ class WarehouseMissionController(Node):
 
     def station_a_callback(self, msg):
         if not self.stations["A"]["found"]:
-            self.stations["A"]["pose"]  = msg
             self.stations["A"]["found"] = True
             p = msg.pose.position
             self.get_logger().info(
-                f"[CB] Station A DETECTED | pose=({p.x:.2f}, {p.y:.2f}, {p.z:.2f}) "
-                f"frame={msg.header.frame_id} | current_state={self.state}"
+                f"[CB] Station A FIRST DETECTED | dist={p.z:.2f}m "
+                f"| current_state={self.state}"
             )
-        else:
-            self.get_logger().debug(
-                "[CB] Station A pose received but already found — ignoring")
+        self.stations["A"]["pose"] = msg
 
     def station_b_callback(self, msg):
         if not self.stations["B"]["found"]:
-            self.stations["B"]["pose"]  = msg
             self.stations["B"]["found"] = True
             p = msg.pose.position
             self.get_logger().info(
-                f"[CB] Station B DETECTED | pose=({p.x:.2f}, {p.y:.2f}, {p.z:.2f}) "
-                f"frame={msg.header.frame_id} | current_state={self.state}"
+                f"[CB] Station B FIRST DETECTED | dist={p.z:.2f}m "
+                f"| current_state={self.state}"
             )
-        else:
-            self.get_logger().debug(
-                "[CB] Station B pose received but already found — ignoring")
+        self.stations["B"]["pose"] = msg
 
     def offset_callback(self, msg):
         old = self.receptacle_offset
