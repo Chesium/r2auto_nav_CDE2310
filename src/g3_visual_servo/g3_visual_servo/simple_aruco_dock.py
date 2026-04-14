@@ -140,8 +140,6 @@ class SimpleArucoDock(Node):
         odom_topic = str(self.get_parameter("odom_topic").value)
         # Active target — set by dock_to_a / dock_to_b services
         self._active_target_id: int | None = None
-        # Track which stations have been reported (publish pose only once per station)
-        self._station_reported: dict[str, bool] = {"A": False, "B": False}
         marker_size = float(self.get_parameter("marker_size").value)
         dict_name = str(self.get_parameter("dictionary").value)
         self._dock_dist = float(self.get_parameter("dock_distance").value)
@@ -275,8 +273,6 @@ class SimpleArucoDock(Node):
         self._active_target_id = None
         self._cancel_post_turn()
         self._cancel_post_shift()
-        # Reset station detection so poses get re-published on next sighting
-        self._station_reported = {"A": False, "B": False}
         self.get_logger().info("Returned to scan mode")
         resp.success = True
         resp.message = "Scanning"
@@ -356,8 +352,7 @@ class SimpleArucoDock(Node):
     # ── detection ────────────────────────────────────────────────────────
 
     def _scan_and_publish_stations(self, corners, ids) -> None:
-        """Publish /station_a_pose or /station_b_pose when a known marker is seen.
-        Each station is reported only once until _scan_cb resets the flags."""
+        """Publish /station_a_pose or /station_b_pose every frame a known marker is visible."""
         if ids is None or self._cam_mtx is None:
             return
 
@@ -368,7 +363,7 @@ class SimpleArucoDock(Node):
         for i, mid in enumerate(ids.flatten()):
             mid = int(mid)
             station_id = MARKER_STATION_MAP.get(mid)
-            if station_id is None or self._station_reported[station_id]:
+            if station_id is None:
                 continue
 
             img_pts = np.ascontiguousarray(corners[i][0], dtype=np.float64)
@@ -381,9 +376,6 @@ class SimpleArucoDock(Node):
             if not ok or tvec[2, 0] <= 0:
                 continue
 
-            # Build a PoseStamped with camera-frame distance info.
-            # The FSM only uses this to trigger "station found" — it does NOT
-            # navigate to this pose (Nav2 removed). The z value carries distance.
             t = tvec.flatten()
             pose = PoseStamped()
             pose.header.stamp = self.get_clock().now().to_msg()
@@ -396,11 +388,6 @@ class SimpleArucoDock(Node):
                 self._station_a_pose_pub.publish(pose)
             else:
                 self._station_b_pose_pub.publish(pose)
-
-            self._station_reported[station_id] = True
-            self.get_logger().info(
-                f"Station {station_id} (marker {mid}) detected at {t[2]:.2f}m"
-            )
 
     def _detect_target(self, corners, ids):
         """Find the active target marker among pre-detected markers.

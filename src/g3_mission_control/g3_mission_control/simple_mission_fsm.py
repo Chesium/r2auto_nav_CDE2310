@@ -36,7 +36,6 @@ from enum import Enum, auto
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
@@ -69,17 +68,8 @@ class SimpleMissionFSM(Node):
         self._dock_entered: bool = False
 
         # ─── Subscribers: callbacks ONLY write flags, never transition ───
-        # /station_a_pose is published with TRANSIENT_LOCAL (latched) QoS by
-        # aruco_dock_node, so our subscriber must match or the connection
-        # silently fails and no messages are delivered.
-        latched_qos = QoSProfile(
-            depth=1,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            reliability=ReliabilityPolicy.RELIABLE,
-            history=HistoryPolicy.KEEP_LAST,
-        )
         self.create_subscription(
-            PoseStamped, "/station_a_pose", self._marker_cb, latched_qos
+            PoseStamped, "/station_a_pose", self._marker_cb, 10
         )
         self.create_subscription(
             Bool, "/aruco_dock/done", self._dock_done_cb, 10
