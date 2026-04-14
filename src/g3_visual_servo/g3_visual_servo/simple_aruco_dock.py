@@ -237,11 +237,9 @@ class SimpleArucoDock(Node):
     def _begin_approach(self, marker_id: int, label: str, resp):
         """Shared logic for dock_to_a, dock_to_b, and legacy start."""
         if self._state == _State.APPROACHING:
-            self.get_logger().warning(
-                f"Already approaching — resetting and restarting for {label}")
-            self._send_cmd(0.0, 0.0)
-            self._cancel_post_turn()
-            self._cancel_post_shift()
+            resp.success = True
+            resp.message = f"Already approaching {label}"
+            return resp
         self._active_target_id = marker_id
         self.get_logger().info(f"Docking started — {label} (marker {marker_id})")
         self._state = _State.APPROACHING
