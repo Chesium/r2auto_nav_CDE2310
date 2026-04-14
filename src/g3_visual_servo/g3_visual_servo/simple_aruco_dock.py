@@ -638,7 +638,7 @@ class SimpleArucoDock(Node):
             self._start_post_shift()
         else:
             angular_z = float(np.clip(self._post_turn_kp * ccw_err, 0.0, self._post_turn_speed))
-            self._send_cmd(0.0, angular_z)
+            self._send_cmd(0.0, -angular_z)
 
     def _cancel_post_turn(self) -> None:
         if self._post_turn_timer is not None:
