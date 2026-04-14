@@ -345,19 +345,23 @@ class WarehouseMissionController(Node):
                 f"explore_complete={self.exploration_complete}")
 
         if self.stations["A"]["found"] and not self.stations["A"]["delivered"]:
-            self.get_logger().info(
-                f"[EXPLORE] Station A found after {elapsed:.1f}s exploring — "
-                f"disabling exploration, transitioning to DOCK_AT_A")
-            self._set_exploration(False)
-            self.transition_to(MissionState.DOCK_AT_A)
-            return
+            dist = self._station_distance("A")
+            if dist is not None and dist < 1.0:
+                self.get_logger().info(
+                    f"[EXPLORE] Station A within {dist:.2f}m after {elapsed:.1f}s — "
+                    f"disabling exploration, transitioning to DOCK_AT_A")
+                self._set_exploration(False)
+                self.transition_to(MissionState.DOCK_AT_A)
+                return
         if self.stations["B"]["found"] and not self.stations["B"]["delivered"]:
-            self.get_logger().info(
-                f"[EXPLORE] Station B found after {elapsed:.1f}s exploring — "
-                f"disabling exploration, transitioning to DOCK_AT_B")
-            self._set_exploration(False)
-            self.transition_to(MissionState.DOCK_AT_B)
-            return
+            dist = self._station_distance("B")
+            if dist is not None and dist < 1.0:
+                self.get_logger().info(
+                    f"[EXPLORE] Station B within {dist:.2f}m after {elapsed:.1f}s — "
+                    f"disabling exploration, transitioning to DOCK_AT_B")
+                self._set_exploration(False)
+                self.transition_to(MissionState.DOCK_AT_B)
+                return
         if self.stations["A"]["delivered"] and self.stations["B"]["delivered"]:
             self.get_logger().info(
                 f"[EXPLORE] Both stations delivered — mission complete after {elapsed:.1f}s")
@@ -651,6 +655,13 @@ class WarehouseMissionController(Node):
 
     def get_delay_for_ball(self, ball_index):
         return self.station_a_delays.get(ball_index, 0.0)
+
+    def _station_distance(self, sid):
+        """Return latest camera-frame distance to station, or None."""
+        pose = self.stations[sid].get("pose")
+        if pose is None:
+            return None
+        return pose.pose.position.z
 
     def get_dock_state(self, sid):
         return MissionState.DOCK_AT_A if sid == "A" else MissionState.DOCK_AT_B
