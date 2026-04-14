@@ -197,7 +197,6 @@ class SimpleArucoDock(Node):
         self._post_shift_target_dist: float | None = None
         self._post_shift_start_x: float | None = None
         self._post_shift_start_y: float | None = None
-        self._post_shift_heading_yaw: float | None = None
         self._post_shift_timer = None
 
         # ROS I/O
@@ -673,7 +672,6 @@ class SimpleArucoDock(Node):
             return
         self._post_shift_start_x = self._odom_x
         self._post_shift_start_y = self._odom_y
-        self._post_shift_heading_yaw = self._odom_yaw
         if self._post_shift_timer is None:
             self._post_shift_timer = self.create_timer(0.02, self._post_shift_step)
         self.get_logger().info(
@@ -686,7 +684,6 @@ class SimpleArucoDock(Node):
             self._post_shift_target_dist is None
             or self._post_shift_start_x is None
             or self._post_shift_start_y is None
-            or self._post_shift_heading_yaw is None
             or self._odom_x is None
             or self._odom_y is None
         ):
@@ -694,26 +691,24 @@ class SimpleArucoDock(Node):
             return
         dx = self._odom_x - self._post_shift_start_x
         dy = self._odom_y - self._post_shift_start_y
-        progress = (
-            dx * math.cos(self._post_shift_heading_yaw)
-            + dy * math.sin(self._post_shift_heading_yaw)
-        )
-        remaining = self._post_shift_target_dist - progress
+        traveled = math.sqrt(dx * dx + dy * dy)
+        target = abs(self._post_shift_target_dist)
+        remaining = target - traveled
         self._debug_pub.publish(
             String(
                 data=(
-                    f"POST_SHIFT target={self._post_shift_target_dist:+.3f} "
-                    f"progress={progress:+.3f} rem={remaining:+.3f}"
+                    f"POST_SHIFT target={target:.3f} "
+                    f"traveled={traveled:.3f} rem={remaining:+.3f}"
                 )
             )
         )
-        if abs(remaining) <= self._post_shift_dist_tol:
+        if remaining <= self._post_shift_dist_tol:
             self._send_cmd(0.0, 0.0)
             self._cancel_post_shift()
             self.get_logger().info("Post-dock shift complete")
             self._done_pub.publish(Bool(data=True))
         else:
-            linear_x = math.copysign(self._post_shift_speed, remaining)
+            linear_x = math.copysign(self._post_shift_speed, self._post_shift_target_dist)
             self._send_cmd(-linear_x, 0.0)
 
     def _cancel_post_shift(self) -> None:
@@ -723,7 +718,6 @@ class SimpleArucoDock(Node):
         self._post_shift_target_dist = None
         self._post_shift_start_x = None
         self._post_shift_start_y = None
-        self._post_shift_heading_yaw = None
 
 
 def main(args: list[str] | None = None) -> None:
