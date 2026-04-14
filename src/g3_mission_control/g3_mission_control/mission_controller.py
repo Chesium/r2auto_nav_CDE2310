@@ -98,6 +98,7 @@ class WarehouseMissionController(Node):
 
         # ── ArUco dock state ───────────────────────────────────────────
         self.aruco_dock_done    = False
+        self._dock_failed       = False
         self._dock_started      = False
         self._dock_start_time   = None
 
@@ -238,6 +239,8 @@ class WarehouseMissionController(Node):
     def aruco_dock_done_callback(self, msg):
         if msg.data:
             self.aruco_dock_done = True
+        else:
+            self._dock_failed = True
 
     def b_done_callback(self, msg):
         self.get_logger().info(
@@ -372,10 +375,20 @@ class WarehouseMissionController(Node):
         """Call dock service once, then just wait for done."""
         if not self._dock_started:
             self.aruco_dock_done = False
+            self._dock_failed = False
             client = self.dock_to_a_client if sid == "A" else self.dock_to_b_client
             if client.service_is_ready():
                 client.call_async(Trigger.Request())
                 self._dock_started = True
+            return
+
+        if self._dock_failed:
+            self._dock_failed = False
+            self._dock_started = False
+            self.get_logger().warn(f"[DOCK] Docking to {sid} FAILED — returning to explore")
+            self._call_dock_scan()
+            self._set_exploration(True)
+            self.transition_to(MissionState.EXPLORE)
             return
 
         if self.aruco_dock_done:
