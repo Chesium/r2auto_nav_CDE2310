@@ -124,7 +124,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("ema_alpha", 0.3)
         self.declare_parameter("lost_hold", 3)
         self.declare_parameter("lost_stop", 10)
-        self.declare_parameter("use_stamped_cmd_vel", False)
+        self.declare_parameter("use_stamped_cmd_vel", True)
         self.declare_parameter("final_heading_offset_deg", -90.0)
         self.declare_parameter("post_turn_speed", 0.12)
         self.declare_parameter("post_turn_kp", 0.5)
