@@ -132,7 +132,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("post_turn_yaw_tolerance_deg", 2.0)
         self.declare_parameter("post_shift_speed", 0.04)
         self.declare_parameter("post_shift_min_distance", 0.02)
-        self.declare_parameter("post_shift_distance_tolerance", 0.01)
+        self.declare_parameter("post_shift_distance_tolerance", 0.04)
 
         # Read parameters
         image_topic = str(self.get_parameter("image_topic").value)
@@ -664,20 +664,9 @@ class SimpleArucoDock(Node):
             self.get_logger().warning("Skipping post-dock shift: no odom position received yet")
             self._publish_done()
             return
-        # The camera is cam_forward_offset (r) ahead of the pivot point.
-        # After turning by angle `a` (CCW), the camera sweeps an arc and
-        # its projection along the new forward direction shifts.  The exact
-        # shift needed to re-align the camera with the marker is:
-        #
-        #   shift = -x * sin(a) - r * (1 - cos(a))
-        #
-        # where x = last_lateral_offset, a = CCW turn angle, r = cam offset.
-        # For 90° CW (a=270°): shift =  x - r
-        # For 90° CCW (a=90°): shift = -x - r
-        a = self._post_turn_angle
-        x = self._last_lateral_offset
-        r = self._cam_forward_offset
-        self._post_shift_target_dist = -x * math.sin(a) - r * (1.0 - math.cos(a))
+        # Shift by the lateral offset between camera and marker (tvec[0]).
+        # After the post-turn, this aligns the robot with the marker.
+        self._post_shift_target_dist = self._last_lateral_offset
         if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
             self._post_shift_target_dist = None
             self._publish_done()
@@ -688,8 +677,7 @@ class SimpleArucoDock(Node):
         if self._post_shift_timer is None:
             self._post_shift_timer = self.create_timer(0.02, self._post_shift_step)
         self.get_logger().info(
-            f"Post-dock shift: x={x:+.3f}m r={r:.3f}m "
-            f"a={math.degrees(a):.0f}deg "
+            f"Post-dock shift: lateral_offset={self._last_lateral_offset:+.3f}m "
             f"move={self._post_shift_target_dist:+.3f}m"
         )
 
