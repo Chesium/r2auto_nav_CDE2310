@@ -566,6 +566,8 @@ class SimpleArucoDock(Node):
         self._debug_img_pub.publish(msg)
 
     def _send_cmd(self, linear_x: float, angular_z: float) -> None:
+        # Negate linear to match physical robot direction (camera/motor convention)
+        linear_x = -linear_x
         if self._use_stamped:
             cmd = TwistStamped()
             cmd.header.stamp = self.get_clock().now().to_msg()
@@ -675,7 +677,7 @@ class SimpleArucoDock(Node):
         a = self._post_turn_angle
         x = self._last_lateral_offset
         r = self._cam_forward_offset
-        self._post_shift_target_dist = -(-x * math.sin(a) - r * (1.0 - math.cos(a)))
+        self._post_shift_target_dist = -x * math.sin(a) - r * (1.0 - math.cos(a))
         if abs(self._post_shift_target_dist) < self._post_shift_min_dist:
             self._post_shift_target_dist = None
             self._publish_done()
