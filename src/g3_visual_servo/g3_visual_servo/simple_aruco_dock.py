@@ -103,11 +103,11 @@ class SimpleArucoDock(Node):
         super().__init__("simple_aruco_dock")
 
         # Parameters
-        self.declare_parameter("image_topic", "/camera/image_raw")
-        self.declare_parameter("camera_info_topic", "/camera/camera_info")
+        self.declare_parameter("image_topic", "/usb_cam/image_raw")
+        self.declare_parameter("camera_info_topic", "/usb_cam/camera_info")
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("target_marker_id", 42)
-        self.declare_parameter("marker_size", 0.067)
+        self.declare_parameter("marker_size", 0.038)
         self.declare_parameter("dictionary", "DICT_4X4_100")
         self.declare_parameter("dock_distance", 0.30)
         self.declare_parameter("dist_tolerance", 0.04)
@@ -124,7 +124,7 @@ class SimpleArucoDock(Node):
         self.declare_parameter("ema_alpha", 0.3)
         self.declare_parameter("lost_hold", 3)
         self.declare_parameter("lost_stop", 10)
-        self.declare_parameter("use_stamped_cmd_vel", False)
+        self.declare_parameter("use_stamped_cmd_vel", True)
         self.declare_parameter("final_heading_offset_deg", -90.0)
         self.declare_parameter("post_turn_speed", 0.12)
         self.declare_parameter("post_turn_kp", 0.5)

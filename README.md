@@ -683,18 +683,10 @@ ros2 action send_goal /dock_robot nav2_msgs/action/DockRobot "{
 ## Fallback: Simple ArUco Docking (no Nav2)
 
 If Nav2 docking doesn't work IRL, use `simple_aruco_dock` which bypasses the docking_server entirely:
-
-```bash
-# Terminal 1: Nav2 + SLAM
-ros2 launch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
+ kbu0hobunch g3nav2 g3nav2_bringup_launch.py use_frontier:=False
 
 # Terminal 2: Simple docking node
-ros2 run g3_visual_servo simple_aruco_dock --ros-args \
-  -p image_topic:=/usb_cam/image_raw \
-  -p camera_info_topic:=/usb_cam/camera_info \
-  -p target_marker_id:=42 \
-  -p marker_size:=0.067 \
-  -p use_stamped_cmd_vel:=True
+ros2 run g3_visual_servo simple_aruco_dock
 
 # Terminal 3: Drive near the marker with teleop, then stop
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
