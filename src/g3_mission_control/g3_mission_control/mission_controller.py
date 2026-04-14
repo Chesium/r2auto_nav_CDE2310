@@ -40,7 +40,7 @@ Topic/Service Contracts:
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist, TwistStamped
 from std_msgs.msg import Bool, String, Int32
 from std_srvs.srv import Trigger, SetBool
 import time
@@ -133,7 +133,7 @@ class WarehouseMissionController(Node):
 
         # ── Publishers ──────────────────────────────────────────────────
         self.state_pub   = self.create_publisher(String, "/mission_state", 10)
-        self.cmd_vel_pub = self.create_publisher(Twist,  "/cmd_vel",       10)
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, "/cmd_vel", 10)
 
         # ── Service clients ─────────────────────────────────────────────
         self.fire_launcher_client = self.create_client(Trigger, "/fire_launcher")
@@ -573,7 +573,7 @@ class WarehouseMissionController(Node):
     def handle_complete(self):
         elapsed_mission = time.time() - self._mission_start_time
         self._set_exploration(False)
-        self.cmd_vel_pub.publish(Twist())
+        self.cmd_vel_pub.publish(TwistStamped())
         self.get_logger().info("")
         self.get_logger().info("=" * 60)
         self.get_logger().info("MISSION COMPLETE")
