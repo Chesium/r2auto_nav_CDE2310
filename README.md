@@ -15,6 +15,10 @@
 - [Testing Documentation](docs/G2-Testing-Documentation.md)
 - [Areas for Improvement](docs/G2-Areas-for-Improvement.md)
 
+## User Manual
+
+- [User Manual](docs/assets/g2-report/Group3_User_Manual.pdf)
+  
 ## Development Guide
 
 - [Development Guide](docs/DevelopmentGuide.md)
