@@ -15,6 +15,15 @@
 - [Testing Documentation](docs/G2-Testing-Documentation.md)
 - [Areas for Improvement](docs/G2-Areas-for-Improvement.md)
 
+## User Manual
+
+- [User Manual](docs/assets/g2-report/Group3_User_Manual.pdf)
+  
 ## Development Guide
 
 - [Development Guide](docs/DevelopmentGuide.md)
+
+## Final Run Screen Recordings
+
+- [Part 1](https://youtu.be/hjtmTSh4A78)
+- [Part 2](https://youtu.be/OZwQptIx55s)

@@ -191,5 +191,3 @@ Improvement / Fix:
 ### Systems Engineering Takeaway
 
 Across all three items above, the common failure mode was the same: we underestimated how much of a systems-engineering project is actually *integration and communication between subsystems*, rather than the subsystems themselves. Individually, docking, alignment, and launching all worked. What cost us on the day was the plumbing between them — service contracts that were not exercised end-to-end, pose frames that were not reconciled across nodes, and a development environment that made integration testing harder than it needed to be. The most valuable investment for a future iteration of this project would be a continuous integration-style workflow that forces every new subsystem change to run against the full mission FSM, rather than in isolation.
-
-![enduserdoc](assets/g2-report/enduserdoc.png)
