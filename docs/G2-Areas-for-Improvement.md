@@ -156,16 +156,50 @@ Improvement / Fix:
 - Update parameter defaults to official values
 - Add a pre-mission checklist to verify critical parameters:
 
-## Docking and Integration
+## Docking and Integration [Arnav]
 
-The docking algorithm had worked in isolation, but hadn't been positioned in the exact correct position to be able to shoot the balls correctly. Even after the docking, we had to slightly move the TurtleBot to align (it was slightly too close).
+### Docking Pose Accuracy at the Launcher
 
-I wanted to survive the course on macOS, and although I used Parallels, I later tried to use Docker and constantly went into rabbit holes of testing and configuring network configs for it to work, only for it to never be possible to work in real life. Furthermore I tried to outsource the job of Gazebo to Foxglove, and never really tested the integration with Nav, neither in simulation nor in the real world. I always relied on a teammate / my teammate’s laptop being present to actually test my code.
+Observed: The ArUco visual-servo dock (`simple_aruco_dock`) reliably stopped the robot in front of each station marker in isolation, but the final pose was not close enough to the receptacle for the launcher to score consistently. In practice, the robot typically came to rest slightly *too close* to the wall, requiring a small manual nudge before the balls could be fired cleanly.
 
-Lesson learnt, trying to be oversmart and using complicated setups only makes sense when you have a clear plan and prior experience. Getting the job done is much more important than finding novel solutions which may not work / add too much overhead. If we had planned earlier, we may have been able to integrate Nav2 based docking, to improve avoidance of obstacles, and perform safe and reliable docking.
+Root Cause: The docking setpoint (`dock_distance = 0.30 m`, `camera_forward_offset = 0.08 m`) and the post-dock turn-and-shift geometry were tuned against the ArUco marker alone, without closing the loop on the launcher's actual firing pose. The marker is the docking reference, but the *launcher barrel* is what needs to line up with the receptacle opening — and the two were never calibrated together in a single end-to-end test.
 
-Additionally, testing the integration between aligning and docking was an absolute must we were unable to perform.
+Impact: At least one scoring attempt at each station was lost to pose error rather than to detection or control failure.
 
-We underestimated how difficult integration and communication between subsystems are in Systems Engineering.
+Improvement / Fix:
+
+- Treat the launcher barrel, not the marker, as the reference frame for the docking setpoint. Re-tune `dock_distance` and the post-shift offset `Δ` against measured launcher-to-receptacle geometry.
+- Add a dedicated "launcher pose check" test that scores success on whether a fired ball enters the receptacle, not on whether the dock FSM reaches `DONE`.
+- Consider a final fine-alignment stage (either by the aligner node or a secondary visual cue on the receptacle itself) after docking completes, so the docking node can afford a slightly looser final pose.
+
+### Missing End-to-End Dock → Align Integration Test
+
+Observed: Docking, alignment, and launching were each developed and tuned as independent subsystems, and each worked in isolation. However, the *seam* between them — specifically the handover from `DOCK_AT_X` completion into `ALIGN_AT_X` — was never tested end-to-end on the real robot before the graded run. The Station A aligner-enable bug (documented above) is one symptom of this gap; the docking-pose mismatch is another.
+
+Root Cause: Integration testing was treated as a final step rather than a continuous one. Subsystem owners validated their own nodes in isolation (often with hand-placed start poses), and the first time the full `EXPLORE → DOCK → ALIGN → FIRE` chain ran was effectively on the day.
+
+Improvement / Fix:
+
+- Introduce a weekly integration run — even a scripted one on a simplified course — so that interface bugs between docking, alignment, and the launcher surface early.
+- Add logging at every FSM transition so that post-run traces clearly show which subsystem failed, rather than only observing mission-level timeout.
+- Treat inter-subsystem service calls (e.g. `/aligner_a/set_enabled`, `/aruco_dock/dock_to_a`, `/fire_launcher`) as first-class contract points with their own smoke tests.
+
+### Development Environment and Simulation Fidelity
+
+Observed: One team member developed primarily on macOS using Parallels, and later invested significant time attempting a Docker-based ROS 2 workflow — including Fast DDS network configuration for host ↔ container discovery. Despite the effort, the Docker setup never became usable on the real robot, and much of the work was sunk into debugging DDS, networking, and container plumbing rather than mission logic. In parallel, Gazebo was partially replaced with Foxglove as a visualisation tool, and the Nav2 integration was never meaningfully tested in simulation or on hardware from that environment. Real-robot testing therefore remained dependent on a teammate's Linux laptop being present.
+
+Root Cause: The development environment was chosen for convenience (surviving the course on macOS) rather than for the fastest path to working mission code. Complex setups (Parallels, Docker, DDS tuning, Foxglove-as-Gazebo-replacement) were attempted without a concrete plan for validating each rung of the stack, which made it easy to fall into configuration rabbit holes with no deliverable at the end.
+
+Lesson Learned: Novel or unconventional tooling only pays off when there is both (a) a clear plan for what it needs to achieve and (b) prior experience to bound the debugging cost. In a time-boxed systems project, *getting the job done* on a well-supported stack (native Ubuntu + Gazebo + Nav2) almost always beats investing in a cleaner-feeling alternative. Had we committed to a conventional setup earlier, we would very likely have had the runway to integrate Nav2-based docking, giving us proper obstacle avoidance and a more reliable approach to each station.
+
+Improvement / Fix:
+
+- Standardise the team on a single, well-supported development environment from day one (native Ubuntu 22.04 + ROS 2 Jazzy + Gazebo).
+- Require that every contributor be able to run the full simulation stack independently on their own machine — no shared-laptop dependencies.
+- Budget exploratory tooling work (Docker, alternative visualisers, macOS bridges) as explicit, time-boxed experiments with clear success criteria, and abandon them quickly if they do not clear the bar.
+
+### Systems Engineering Takeaway
+
+Across all three items above, the common failure mode was the same: we underestimated how much of a systems-engineering project is actually *integration and communication between subsystems*, rather than the subsystems themselves. Individually, docking, alignment, and launching all worked. What cost us on the day was the plumbing between them — service contracts that were not exercised end-to-end, pose frames that were not reconciled across nodes, and a development environment that made integration testing harder than it needed to be. The most valuable investment for a future iteration of this project would be a continuous integration-style workflow that forces every new subsystem change to run against the full mission FSM, rather than in isolation.
 
 ![enduserdoc](assets/g2-report/enduserdoc.png)

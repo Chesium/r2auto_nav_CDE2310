@@ -13,7 +13,7 @@ FSM:
                                                         └→ FAILED
 
 Topic/Service Contracts:
-  From station_a_aligner:
+  Froxm station_a_aligner:
     /receptacle/offset          Int32   — logged only
     /receptacle/notify_aligned  Trigger — service called once when stably aligned
   From station_b_aligner:

@@ -4,17 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "bcbc8ecc253774bd",
+        "id": "968cd9e1ff4a9f14",
         "type": "tabs",
         "children": [
           {
-            "id": "7b598e460cf02c80",
+            "id": "81d62166b745ea4d",
             "type": "leaf",
             "state": {
-              "type": "graph",
+              "type": "empty",
               "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "icon": "lucide-file",
+              "title": "New tab"
             }
           }
         ]
@@ -176,6 +176,8 @@
       "bases:Create new base": false
     }
   },
-  "active": "7b598e460cf02c80",
-  "lastOpenFiles": []
+  "active": "81d62166b745ea4d",
+  "lastOpenFiles": [
+    "reference/What is a Finite State Machine.md"
+  ]
 }
