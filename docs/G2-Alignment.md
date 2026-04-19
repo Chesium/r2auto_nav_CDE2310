@@ -1,4 +1,4 @@
-## Receptacle Alignment
+## Receptacle Alignment Subsystem
 
 [Home](../README.md)
 

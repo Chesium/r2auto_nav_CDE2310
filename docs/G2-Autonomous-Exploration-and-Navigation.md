@@ -1,4 +1,4 @@
-# Autonomous Exploration and Navigation
+# Autonomous Exploration and Navigation Subsystem
 
 [Home](../README.md)
 
