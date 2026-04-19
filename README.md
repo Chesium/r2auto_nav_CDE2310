@@ -18,3 +18,8 @@
 ## Development Guide
 
 - [Development Guide](docs/DevelopmentGuide.md)
+
+## Final Run Screen Recordings
+
+- [Part 1](https://youtu.be/hjtmTSh4A78)
+- [Part 2](https://youtu.be/OZwQptIx55s)
