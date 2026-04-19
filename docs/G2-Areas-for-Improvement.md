@@ -2,97 +2,93 @@
 
 [Home](../README.md)
 
-(what went wrong in the final run)
-
 ## Early System Integration and Compute Resource Planning
 
-Several issues could have been identified earlier if all nodes were integrated onto the physical robot sooner, even with limited functionality. Earlier full-system testing would have exposed power limitations, CPU overload, interface mismatches, and timing conflicts before the final mission. During operation, running docking, perception, alignment, and launcher nodes simultaneously created significant computational load on the Raspberry Pi. Future versions should migrate heavy vision workloads to a higher-performance onboard computer or optimise node efficiency to reduce latency and dropped frames.
+Several issues would likely have been detected earlier if all major nodes had been integrated onto the physical robot sooner, even with limited functionality. Earlier full-system testing would have exposed power limitations, CPU contention, interface mismatches, and timing conflicts well before the final mission. During operation, running docking, perception, alignment, and launcher nodes concurrently placed significant computational load on the Raspberry Pi. Future iterations should either migrate heavier vision workloads to a more capable onboard computer or optimise the existing nodes more aggressively to reduce latency and dropped frames.
 
 ## Power Management and Electrical Safety
 
-Power management was a critical operational issue. The TurtleBot3 battery discharged quickly during motion testing, reducing test duration and occasionally causing unstable behaviour. Future operations should include scheduled charging cycles, spare battery availability, and external bench power for development work that does not require motor actuation.
+Power management proved to be a major operational concern. The TurtleBot3 battery discharged quickly during repeated motion tests, reducing test duration and occasionally contributing to unstable system behaviour. Future operation should include scheduled charging cycles, spare battery availability, and the use of bench power during development tasks that do not require motor actuation.
 
-Electrical handling procedures must also be improved. Hardware damage occurred due to wiring mistakes and performing mechanical work near powered electronics. Future builds should enforce power-off maintenance procedures, connector polarity verification, and pre-power inspection checklists.
+Electrical handling procedures also require improvement. Hardware damage occurred due to wiring mistakes and mechanical work performed near powered electronics. Future builds should adopt stricter power-off maintenance procedures, connector polarity checks, and a pre-power inspection checklist.
 
 ## Mechanical Readiness Before Software Tuning
 
-The robot’s mechanical structure should be fully finalised before advanced software tuning begins. Structural looseness, vibration, and wobbling negatively affected localisation, exploration, and navigation performance. Completing the mechanical platform first provides a stable baseline for subsequent electrical integration and software calibration.
+The robot's mechanical platform should be finalised before advanced software tuning begins. Structural looseness, vibration, and wobble degraded localisation, exploration, and navigation performance. A mechanically stable platform provides a more reliable baseline for electrical integration, controller tuning, and perception calibration.
 
 ## Simplicity-First Engineering Strategy
 
-Future teams should prioritise robust and simple solutions that satisfy mission requirements before pursuing highly complex methods. Several advanced approaches required long debugging cycles and delayed system integration. A more effective strategy is to first achieve a reliable minimum viable system, then incrementally improve performance once complete mission functionality has been demonstrated.
+Future teams should prioritise robust and simple solutions that satisfy mission requirements before pursuing more ambitious designs. Several sophisticated approaches consumed significant debugging time and delayed system integration. A more effective strategy is to establish a reliable minimum viable system first, then improve performance incrementally once end-to-end mission functionality has been demonstrated.
 
 ## Navigation Reliability, Time Synchronisation, and Mechanical Stability
 
-One area that requires further improvement is the robustness of the navigation system when it is deployed as a distributed ROS 2 stack across the TurtleBot Raspberry Pi and the laptop. In our architecture, `turtlebot_node` and `ld08_driver`, which publish `/odom` and `/scan`, run on the Raspberry Pi, while Cartographer and the Nav2 stack run on the laptop. This means the navigation pipeline depends on accurate cross-device timing, because odometry originates on one machine while Cartographer publishes the `map -> odom` transform on another.
+One major area for improvement is the robustness of the navigation system when deployed as a distributed ROS 2 stack across the TurtleBot Raspberry Pi and the operator laptop. In the final architecture, low-level odometry and scan data originated on the Raspberry Pi, while Cartographer and Nav2 ran on the laptop. This made the navigation pipeline highly sensitive to cross-device timing consistency because `odom` and `map -> odom` were generated on different machines.
 
 ### Observed Symptoms
 
-During testing, we occasionally observed that after sending a Nav2 goal, the robot moved unusually slowly and displayed a side-to-side swaying gait. RViz still showed a reasonable global route, so the issue did not initially appear to be a simple global planning failure. Several days before the final run, we also encountered intermittent goal aborts shortly after dispatch. The Nav2 logs repeatedly reported `Lookup would require extrapolation into the future` when resolving transforms between the `map` and `odom` frames. In the example below, the timing gap was small, approximately 41 ms, but still large enough to invalidate the transform lookup and cause goal failure.
+During testing, the robot occasionally moved unusually slowly after receiving a Nav2 goal and exhibited visible side-to-side swaying. RViz continued to display plausible global routes, so the issue did not initially appear to be a straightforward global-planning failure. Several days before the final run, intermittent goal aborts were also observed. Nav2 logs repeatedly reported `Lookup would require extrapolation into the future` when resolving transforms between `map` and `odom`, with timing gaps on the order of tens of milliseconds.
 
-During the final run, both problems reappeared in a more severe form. The robot could not maintain a stable straight trajectory, and nearly every exploration goal generated by the frontier explorer was marked `Aborted` or `Failure` within a few seconds. As a result, the explorer repeatedly searched for new frontier goals without making reliable exploration progress.
+During the final run, both problems became more severe. The robot could not maintain a stable straight trajectory, and many exploration goals generated by the frontier explorer were marked `Aborted` or `Failure` within a few seconds. As a result, the robot repeatedly searched for new goals without making reliable exploration progress.
 
 ### Post-Run Investigation
 
-After the final run, we carried out several debugging tests to separate possible mechanical and software-timing causes.
+Several post-run experiments were conducted to separate software-timing effects from mechanical causes.
 
-First, we tested the robot with the feeder emptied of ping pong balls. Under this condition, the swaying motion became noticeably less severe. We also observed that with the feeder loaded, the robot still appeared shaky even during teleoperation. This suggests that the feeder and payload arrangement likely introduced a genuine mechanical instability, such as vibration, resonance, or a shifted centre of mass, rather than the effect being caused purely by Nav2.
+First, the robot was tested with the feeder emptied of ping-pong balls. Under this condition, the swaying motion became noticeably less severe. The platform also appeared unstable during teleoperation when the feeder was fully loaded, suggesting that the feeder and payload arrangement introduced a genuine mechanical effect such as vibration, resonance, or a shifted centre of mass.
 
-Second, we reproduced the same `extrapolation into the future` transform error after the final run. In some trials, shutting the Raspberry Pi down, allowing it to cool, and rebooting it temporarily removed the issue, after which navigation behaved more normally. However, the error could reappear after longer uptime. This initially suggested that computational load or thermal state might have worsened the system's timing sensitivity. However, we do not have evidence of actual thermal throttling, and in post-run cold-boot tests the timing issue was still observed even when `vcgencmd measure_temp` was only around 41 °C. Therefore, overheating alone cannot explain the problem.
+Second, the same `extrapolation into the future` transform error was reproduced after the final run. In some trials, shutting down the Raspberry Pi, allowing it to cool, and rebooting temporarily reduced the problem, suggesting that system load or thermal state might have amplified timing sensitivity. However, there was no direct evidence of thermal throttling, and the timing issue could still be reproduced during colder post-run tests, so overheating alone was not a sufficient explanation.
 
-Third, we checked whether the issue could have been caused by inconsistent ROS clock configuration such as `use_sim_time`, but this was not the case. Our final mitigation was to synchronise the Raspberry Pi and laptop clocks explicitly using `chrony`. After doing so, the `extrapolation into the future` error disappeared in testing, and the abnormal navigation behaviour was significantly improved.
+Third, the team verified that the issue was not caused by inconsistent ROS clock settings such as `use_sim_time`. The final mitigation was to synchronise the Raspberry Pi and laptop clocks explicitly using `chrony`. After doing so, the transform extrapolation error disappeared in testing and navigation behaviour improved significantly.
 
 ### Interpretation
 
-Based on these observations, we now believe the final-run failure was most likely caused by two overlapping issues rather than one single bug.
+The final-run failure is therefore best understood as the interaction of two separate issues.
 
-The first issue was a software-timing problem in the distributed TF chain. Since odometry was produced on the Raspberry Pi while Cartographer and Nav2 were running on the laptop, the system was especially sensitive to clock mismatch between the two devices. The strongest evidence for this is that explicit clock synchronisation using `chrony` removed the transform extrapolation error. For this reason, we interpret the repeated goal aborts primarily as a time-synchronisation or TF publication latency problem under distributed operation, rather than purely as a navigation-planning issue.
+The first issue was a software-timing problem in the distributed TF chain. Because odometry was produced on the Raspberry Pi while Cartographer and Nav2 ran on the laptop, the system was sensitive to even modest clock mismatch between devices. The strongest evidence for this interpretation is that explicit clock synchronisation with `chrony` removed the transform extrapolation error.
 
-The second issue was a mechanical stability problem related to the feeder and payload. The fact that the robot became less shaky when the ping pong balls were removed, and that it could still shake during teleoperation, suggests that the loaded feeder changed the robot's dynamic behaviour. This mechanical issue likely did not directly cause the TF extrapolation error, but it probably worsened motion quality and made the overall navigation system less tolerant to timing and control disturbances.
+The second issue was a mechanical stability problem associated with the feeder and payload. The reduction in swaying when the feeder was empty suggests that the loaded payload altered the robot's dynamics. This problem did not directly cause the transform error, but it likely made the platform less tolerant to timing disturbances and degraded path-tracking quality.
 
-Taken together, the evidence suggests the following interpretation:
+Taken together, the evidence suggests that:
 
-- repeated `Aborted` exploration goals were most likely caused by timing inconsistency in the `map -> odom` TF chain across devices
-- unstable swaying motion was likely worsened by feeder/payload-induced resonance or mass-distribution effects
-- under final-run conditions, these two issues interacted and significantly reduced navigation reliability
+- repeated exploration goal aborts were primarily caused by timing inconsistency in the distributed `map -> odom` transform chain
+- unstable swaying motion was worsened by feeder and payload dynamics
+- the combination of these effects significantly reduced navigation reliability during the final run
 
 ### Insights
 
-This investigation points to two main insights for future system development.
+Two key lessons follow from this investigation.
 
-First, explicit time synchronisation between ROS devices should be treated as a required part of system setup rather than an optional convenience. In our final configuration, the navigation stack depended on transforms and odometry generated across different machines, so clock consistency was essential. Even in environments without Internet access, a local NTP server or another reliable synchronisation method should be configured before testing and deployment.
+First, time synchronisation across ROS devices should be treated as a required part of system setup rather than as an optional convenience. In any distributed navigation architecture, clock consistency is essential to reliable transform and odometry handling. Even without Internet access, a local NTP-style synchronisation mechanism should be configured before testing and deployment.
 
-Second, all payload mounting should be designed to ensure mechanical stability during motion. If we encounter such problems in the future, we can try lowering the centre of mass, stiffening the support structure, reducing vibration transmission into the chassis, and validating the design both with and without the full payload. This would reduce the likelihood that mechanical resonance degrades path tracking or amplifies controller sensitivity.
+Second, payload mounting should be treated as part of the navigation problem rather than as a purely mechanical afterthought. Future designs should reduce feeder motion, lower the centre of mass where possible, and validate the platform both with and without the full payload installed.
 
-More broadly, this episode showed that a distributed autonomous navigation system should be validated not only at the algorithm level, but also at the system-integration level. In future testing, we should treat clock synchronisation, TF consistency, payload-induced dynamics, and long-duration runtime stability as formal verification items rather than ad hoc checks performed only after failures appear.
+More broadly, the project showed that a distributed autonomous navigation system must be validated not only at the algorithm level, but also at the full system-integration level. Clock synchronisation, TF consistency, payload-induced dynamics, and long-duration runtime stability should all be treated as formal verification items.
 
 ## Resonance
 
-On test day, Turtlebot wobbled and jittered violently. After running rteleop on Turtlebot with and without 9 balls inside the feeder, we concluded that the balls' shaking inside the feeder created resonant motion with the Turtlebot. This caused it to shake, which caused the balls to move even more, which caused the bot to wobble more. A solution would be to 3D print a more snug feeder that prevents ball movement and to attach the feeder more strongly to the bot.
+During testing, the TurtleBot exhibited pronounced wobble and jitter when the feeder was loaded with nine balls. Teleoperation tests performed with and without the payload suggested that ball motion inside the feeder excited resonant behaviour in the platform. A more rigid feeder design with tighter ball retention, combined with a stronger mechanical attachment to the chassis, would likely reduce this effect.
 
-## Inconsistent shooting
+## Inconsistent Shooting
 
-Uniquely uneven edges on both cams caused one to release spring before another causing the striker to come down on the ball at an angle. This could be addressed by adding rounded edges to the cam design as sharp edges are harder for 3D printers to manufacture precisely.
+Uneven cam edges caused one side of the spring mechanism to release before the other, producing angled striker motion and inconsistent shots. Future designs should use cam profiles that are easier to manufacture repeatably, for example by avoiding sharp transitions that are difficult to print accurately.
 
-## Unstable CoG
+## Unstable Centre of Gravity
 
-The boxy launcher design attached to the front causes the center of gravity to shift in front of the bot. This leads to more load on the caster, leading to higher rolling resistance. Since TurtleBot3 Burger is a differential-drive robot, bad weight distribution can make rotation less smooth. This would be solved by 3D printing a launcher more closely attached to the bot rather than laser cutting it.
+The front-mounted launcher shifted the centre of gravity forward, increasing load on the caster and raising rolling resistance. Because the TurtleBot3 Burger is a differential-drive platform, poor weight distribution also made turning less smooth. A more compact launcher integrated closer to the chassis would improve stability.
 
-Hough Circle Detection didn’t publish the /annotated topic, so basically, the circle detection wasn’t working at all
+## 3D-Printed Part Mismatch
 
-## 3D printed part mismatch
+Several printed components required filing or boring during assembly. This was largely caused by manufacturing parts before a complete CAD model of the full launcher assembly had been finalised. Future work should complete the overall model first or include adjustable features that accommodate dimensional uncertainty.
 
-Filing or boring was needed often to assemble. This was due to manufacturing before completing a full CAD model of the entire launcher. This can also be addressed by creating adjustable parts, as mentioned in the next point.
+## Unadjustable Parts
 
-## Unadjustable parts
-
-There was a delay in designing some parts, such as the camera mounts, because it was not decided where they would be installed. However, creating adjustable parts (by using a slotted hole instead of 2 holes) would have allowed manufacturing to begin before finalising camera mount position.
+Some components, particularly the camera mounts, were delayed because their exact installation positions had not yet been finalised. Adjustable features such as slotted holes would have allowed manufacturing to begin earlier while preserving enough flexibility for final placement during integration.
 
 ## Station A Aligner Disabled by Missing Enable Signal
 
-**Observed**: During the graded run, Station A alignment did not start successfully. No annotated frames were published on `/receptacle/annotated`, no offset data was received on `/receptacle/offset`, and the FSM eventually timed out in `ALIGN_AT_A`.
+**Observed:** During the graded run, Station A alignment did not start successfully. No annotated frames were published on `/receptacle/annotated`, no offset data was received on `/receptacle/offset`, and the FSM eventually timed out in `ALIGN_AT_A`.
 
-**Root Cause**: Post-run code review showed that the `station_a_aligner` node processes camera frames only when its internal `enabled` flag is set to `True`. This means all incoming camera frames were discarded before detection, logging, offset publishing, or annotated image output could occur.
+**Root Cause:** Post-run code review showed that `station_a_aligner` processes frames only when its internal `enabled` flag is set to `True`. As a result, all incoming camera frames were discarded before detection, offset publication, or annotated-image output could occur.
 
 ```python
 class HoughDetectorStationA(Node):
@@ -111,7 +107,7 @@ class HoughDetectorStationA(Node):
         self.enabled             = False  # FSM enables via /aligner_a/set_enabled
 ```
 
-Hough Circle Transform Node (Station A) Part 1
+<p align="center">Code: Station A aligner initialisation</p><br>
 
 ```python
     # Image callback
@@ -132,29 +128,23 @@ Hough Circle Transform Node (Station A) Part 1
             return
 ```
 
-Hough Circle Transform Node (Station A) Part 2
+<p align="center">Code: Station A aligner image callback gate</p><br>
 
-The aligner depended on a `/aligner_a/set_enabled` service call from the mission controller. However, in the submitted FSM, no corresponding service call was implemented when entering `ALIGN_AT_A`. As a result, the aligner remained permanently disabled throughout the run.
+The aligner depended on a `/aligner_a/set_enabled` service call from the mission controller. However, the submitted FSM did not issue that call when entering `ALIGN_AT_A`, so the aligner remained disabled throughout the run.
 
-Impact: Station A alignment never began despite the camera node running normally. The FSM waited for alignment feedback that could never be generated, resulting in timeout and mission failure at Station A.
+**Impact:** Station A alignment never began despite the camera node running normally. The FSM waited for feedback that could never be generated, leading to timeout and mission failure at Station A.
 
-Improvement / Fix:
+**Improvement:** Add `/aligner_a/set_enabled(True)` on entry to `ALIGN_AT_A`, and use an always-enabled default during early integration testing to make such failures more visible.
 
-- Add `/aligner_a/set_enabled(True)` when entering `ALIGN_AT_A`
-- Default the aligner to enabled during startup testing
+## Incorrect Station A Firing Delay Parameters
 
-## Incorrect Station A Firing Delay Parameters [Daphne]
+**Observed:** During the graded run, Station A inter-ball delays were configured as `4.7 s` and `0.7 s` rather than the required `7.0 s` and `3.0 s`.
 
-Observed: Station A inter-ball delays used during the graded run were `4.7 s` and `0.7 s`, instead of the TA-specified `7.0 s` and `3.0 s`.
+**Root Cause:** The ROS 2 parameter defaults in the mission controller were not updated after the Week 7 timing specification was released.
 
-Root Cause: The ROS 2 parameter defaults in the mission controller were not updated after the Week 7 timing specification was released.
+**Impact:** Balls 2 and 3 were launched earlier than required, causing scoring penalties even when the launcher itself operated correctly.
 
-Impact: Balls 2 and 3 were launched earlier than required, causing scoring penalties even when launcher operation was successful.
-
-Improvement / Fix:
-
-- Update parameter defaults to official values
-- Add a pre-mission checklist to verify critical parameters:
+**Improvement:** Update parameter defaults to the official values and include a pre-mission checklist for verification of critical timing parameters.
 
 ## Docking and Integration [Arnav]
 

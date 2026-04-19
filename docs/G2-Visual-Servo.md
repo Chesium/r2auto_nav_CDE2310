@@ -1,8 +1,8 @@
-## Visual Servo / ArUco Docking Subsystem
+# Visual Servo and ArUco Docking Subsystem
 
 [Home](../README.md)
 
-### Overview
+## Overview
 
 The docking subsystem is responsible for bringing the robot from a "marker detected somewhere ahead" state into a fixed, repeatable pose in front of each station so the launcher can engage the receptacle. It is implemented as a single ROS 2 node, `simple_aruco_dock.py` (`SimpleArucoDock`), in the `g3_visual_servo` package. The node does visual servoing directly from camera pixels to `/cmd_vel`, without Nav2 actions, TF lookups, or station frames — only the marker pose in the camera frame and a PI loop on top of it. A service call (`/aruco_dock/dock_to_a` or `/aruco_dock/dock_to_b`) triggers the approach; completion is reported on `/aruco_dock/done`.
 

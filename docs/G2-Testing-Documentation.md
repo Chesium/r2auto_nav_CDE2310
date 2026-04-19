@@ -2,130 +2,106 @@
 
 [Home](../README.md)
 
-(Before graded run, while preparing for the graded run)
+This section summarises the main tests carried out while preparing for the graded run. The tests focused on launcher reliability, receptacle alignment, and early validation of the navigation and exploration stack.
 
-## Launcher & Mechanical [Abhi & Chengsi]
+## Launcher and Mechanical
 
-Our servo’s physical functionality is limited due to its hardware inconsistency. Although the source code and documentation does provide the option to turn counterclockwise, which is completely possible in Servo Mode, we needed it to turn in DC mode in order to turn more than 1 full around, which the motor was not able to accomplish. Since the existing Cam was designed for the servo to rotate counterclockwise to load and launch the ball, we had to redesign and reprint the entire cam which added to additional overhead, proving that empirical observations and theoretical predictions can differ vastly.
+The launcher subsystem required extensive empirical testing because the physical behaviour of the servo and cam mechanism did not always match the expected motion from the documentation. In particular, while the hardware nominally supported counterclockwise motion in servo mode, the final design required continuous DC-mode rotation, which introduced practical constraints and forced a redesign of the cam geometry.
 
-1. Proof-of-concept Test
+### 1. Proof-of-Concept Test
 
-Aim: Establish cam mechanism as a viable method for shooting ping pong balls from 20-30cm away.
+**Aim:** Verify that the cam-based mechanism could launch ping-pong balls over a distance of approximately 20-30 cm.
 
-Outcome: successful
+**Outcome:** The mechanism successfully launched the balls, confirming that the concept was viable.
 
-![launch15](assets/g2-report/launch15.jpg)
+![launch15](assets/g2-report/launcher_proofofconcept.png)
 
-![launch4](assets/g2-report/launch4.jpg)
+### 2. Isolated Test with Tin
 
-![launch2](assets/g2-report/launch2.jpg)
+**Aim:** Evaluate whether the launcher could consistently score into a stationary tin receptacle.
 
-1. Isolated Test with Tin
+**Outcome:** The system was able to score, but the firing result was inconsistent.
 
-Aim: Test ball shooting into tin.
+**Action:** A follow-up diagnostic test was conducted to identify the sources of inconsistency before repeating the isolated firing test.
 
-Outcome: able to shoot into tin, but is inconsistent
+![launch10](assets/g2-report/launcher_isolatedtestwithtin.png)
 
-Action: Conduct another test to identify the source of inconsistency. Then redo the isolated test.
+### 3. Inconsistency Check Test
 
-![launch10](assets/g2-report/launch10.png)
+**Aim:** Identify the causes of inconsistent launcher behaviour.
 
-![launch3](assets/g2-report/launch3.png)
+**Outcome:** Three primary issues were identified:
 
-![launch6](assets/g2-report/launch6.png)
+- Ball position within the launcher was not repeatable.
+- The two cams had uneven edges, causing one side to release before the other and driving the striker at an angle.
+- Tape inside the launcher interfered with striker motion and introduced additional variation in shot direction.
 
-![launch5](assets/g2-report/launch5.png)
+**Action:** The team added tape to stabilise ball positioning, filed one cam edge to better match the other, and repositioned the internal tape to keep it outside the striker path.
 
-1. Inconsistency Check Test
+![launch7](assets/g2-report/launcher_inconsistencycheck.png)
 
-Aim: Identify source of inconsistency
+### 4. Station A Test
 
-Outcome:
+**Aim:** Evaluate launcher performance using the actual maze tin geometry for Station A.
 
-Problem 1: Ball position is not constant in launcher
+**Outcome:** The receptacle height in the real setup was higher than assumed during the isolated tin test, so the ball repeatedly struck the lower rim.
 
-Problem 2: The two cams have uneven edges, which results in one cam giving way before another, causing the striker to strike the ball at an angle.
+**Action:** The launcher angle was adjusted and the earlier firing tests were repeated with the revised geometry.
 
-Problem 3 (identified after running the test again): Striker hits tape before hitting the ball, causing it to wobble and hit the ball at uniquely different angles.
+![dock1](assets/g2-report/launcher_stationatest.png)
 
-Action:
+<p align="center">Fig: Station A launcher test before and after angle adjustment</p><br>
 
-Solution 1: Add tape to edges to add thickness and keep the ball in center
+### 5. Alignment with RPi Camera Integration Test
 
-Solution 2: File one cam’s edge to make it consistent with the other
+**Aim:** Verify that the launcher remained accurate when alignment was driven by the RPi camera and Hough-based receptacle detection.
 
-Solution 3: Moved tape closer to front of launcher, ensuring tape to be outside of sticker range of motion
+**Outcome:** The test was successful. The cam position was adjusted until the launcher remained accurate under vision-guided alignment.
 
-![launch7](assets/g2-report/launch7.png)
-
-![launch9](assets/g2-report/launch9.png)
-
-![launch1](assets/g2-report/launch1.png)
-
-1. Station A Test
-
-Aim: Test ball shooting inside the maze tin
-
-Outcome: Height of tin in maze was discovered to be higher than assumed in isolated tin test. The ball continuously hits the bottom edge of the tin.
-
-Action: Change launcher angle and reconduct tests 2-4.
-
-First test at original angle
-
-Second test after increasing launcher angle
-
-![dock1](assets/g2-report/dock1.png)
-
-![launch8](assets/g2-report/launch8.png)
-
-![launch14](assets/g2-report/launch14.png)
-
-![launch12](assets/g2-report/launch12.png)
-
-1. Alignment with Rpi Camera Integration Test
-
-Aim: Test if launcher is accurate when Rpi camera detects hough circle
-
-Outcome: Successful: repositioned cam until launcher shot accurately.
-
-![launch13](assets/g2-report/launch13.jpg)
-
-![launch11](assets/g2-report/launch11.jpg)
-
-![align2](assets/g2-report/align2.jpg)
+![launch13](assets/g2-report/launcher_alignmenttest.png)
 
 ## Receptacle Alignment
 
 ### Station A
 
-Test A-1 focused on Hough Circle parameter calibration. The objective was to determine suitable values for MIN_R, MAX_R, and PARAM2 across the required stand-off range of 22–38 cm. The robot was positioned at measured distances within this range while the aligner node was executed. Detected circle radii were observed through the annotated image feed and parameters were iteratively tuned until stable detection was achieved. Final values of MIN_R = 80, MAX_R = 150, and PARAM2 = 45 provided reliable receptacle detection while rejecting false circles from acrylic maze walls.
+**Test A-1: Hough Circle Parameter Calibration**
 
-Test A-2 verified P-controller convergence performance. The robot was intentionally placed approximately 10 cm out of alignment before the Station A aligner was started. Time taken to achieve the ALIGNED condition and satisfy the stable-frame threshold was recorded. The controller converged in approximately 2 seconds at 30 cm distance with no observable oscillation.
+The objective was to identify suitable values for `MIN_R`, `MAX_R`, and `PARAM2` over the required stand-off range of 22-38 cm. The robot was positioned at measured distances within this range while the aligner node was executed. Circle radii and detection quality were monitored through the annotated image feed, and the parameters were tuned iteratively until stable detection was achieved. The final settings, `MIN_R = 80`, `MAX_R = 150`, and `PARAM2 = 45`, provided reliable receptacle detection while suppressing false circles from the acrylic maze walls.
+
+**Test A-2: P-Controller Convergence**
+
+The robot was placed approximately 10 cm out of alignment before the Station A aligner was activated. The time required to reach the `ALIGNED` condition and satisfy the stable-frame threshold was recorded. The controller converged in approximately 2 seconds at a stand-off distance of 30 cm with no visible oscillation.
 
 ### Station B
 
-Test B-1 focused on HSV threshold calibration for blue LED detection. The LED target was powered while the side camera observed the moving receptacle. Hue, saturation, and value limits were adjusted until the detected area exceeded 200 px² when visible and remained below 20 px² when obscured. Final thresholds of H[100–130], S[180–255], and V[200–255] provided clean segmentation. Visible LED area typically ranged from 400–800 px², while obscured states remained below 10 px².
+**Test B-1: HSV Threshold Calibration**
 
-Test B-2 validated Phase 1 alignment to the circular cutout rather than the moving receptacle itself. With the receptacle placed at multiple positions, the aligner was run and the robot consistently locked onto the cutout centroid. Hough detection remained reliable within the 22–38 cm operating range and alignment was typically achieved within five stable frames.
+The objective was to calibrate HSV thresholds for blue LED detection. The LED target was powered while the side camera observed the moving receptacle. Hue, saturation, and value limits were adjusted until the detected LED area exceeded `200 px^2` when visible and remained below `20 px^2` when obscured. The final thresholds, `H[100-130]`, `S[180-255]`, and `V[200-255]`, produced clean segmentation. Visible LED area typically ranged from `400-800 px^2`, while obscured states remained below `10 px^2`.
 
-Test B-3 verified the rising-edge trigger used for autonomous firing. The receptacle was manually moved past the cutout repeatedly while monitoring launch events. With LED_CONFIRM_FRAMES = 30, debounce logic successfully prevented double-triggering and each receptacle pass generated exactly one fire event.
+**Test B-2: Cutout Alignment Validation**
 
-AruCO visual docking[Arnav]
+The objective was to confirm that Phase 1 alignment reliably targeted the circular cutout rather than the moving receptacle itself. With the receptacle placed at multiple positions, the aligner was run repeatedly and consistently locked onto the cutout centroid. Hough detection remained reliable across the 22-38 cm operating range, and alignment was typically achieved within five stable frames.
+
+**Test B-3: Rising-Edge Trigger Validation**
+
+The receptacle was moved manually past the cutout while launch events were monitored. With `LED_CONFIRM_FRAMES = 30`, the debounce logic prevented double-triggering, and each pass of the receptacle generated exactly one fire event.
 
 ## Navigation and Exploration Test in Simulation
 
-To preliminarily validate the logic of our frontier_exploration node, we initially used a Gazebo simulation environment. We downloaded the "simple_colored_warehouse" demo environment from the Gazebo website for debugging and resolved some core logical issues, such as the system recognising frontier blocks outside the walls and getting stuck in an infinite loop (solved by adding the Information Gain Check). However, recognising the significant differences between the simulation environment and real-world scenarios, we quickly shifted to testing on the real Turtlebot. During these tests, we also discovered that the large number of node processes launched by Cartographer and Nav 2-related commands could not always be completely terminated simply by pressing Ctrl-C. Residual nodes would sometimes interfere with subsequent tests. To address this, we devised a few one-liner commands to deactivate or kill the relevant nodes and created aliases for them, which greatly improved the efficiency of later navigation tests.
+Before committing fully to hardware tests, the team performed an early logic validation of the frontier exploration node in Gazebo using the `simple_colored_warehouse` environment. This helped identify several core issues, including frontier detection outside wall boundaries and an infinite-loop behaviour that was later mitigated by the addition of the information-gain check.
+
+Although the simulator was useful for early debugging, the team transitioned quickly to real-hardware testing because of the large gap between the simulated and physical environments. During these tests, it was also observed that node processes launched by Cartographer and Nav2 could remain alive after `Ctrl-C`, which sometimes interfered with subsequent runs. To streamline later tests, the team created one-line cleanup commands and shell aliases to terminate residual processes reliably.
 
 ![sim2](assets/g2-report/sim2.png)
 
-The simulator environment we used for the initial exploration test.
+<p align="center">Fig: Gazebo environment used for early exploration testing</p><br>
 
 ![sim1](assets/g2-report/sim1.png)
 
-A screenshot of the map being displayed in the RViz in our initial exploration test. The blue cells are the frontiers identified by the explorer node.
+<p align="center">Fig: RViz view showing frontiers detected during the initial simulation tests</p><br>
 
-## Cam and servo integration issues
+## Camera and Servo Integration Issues
 
-Launcher, tested w power supply for understanding experimental voltage and current required, factor into power budget. Initially wanted to use a 5V DC to DC converter, learned that the power pins of rpi can fully support servo using 300 mA.
+Integration testing also highlighted several practical issues around power and configuration. The launcher was tested with a bench power supply to estimate current requirements and validate the electrical budget. This confirmed that the Raspberry Pi power pins could support the servo current draw of approximately `300 mA`, removing the need for a separate `5V` DC-DC converter in the final configuration.
 
-, must ensure param flags are correct
+These tests also reinforced the importance of checking parameter flags carefully before each run, as incorrect launch or runtime configuration could mask otherwise functional subsystem behaviour.
