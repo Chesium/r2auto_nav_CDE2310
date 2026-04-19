@@ -8,6 +8,8 @@
 
 ![schematic](assets/g2-report/schematic.png)
 
+<center>Fig: System Schematic</center><br>
+
 The robot hardware consists of a TurtleBot3 mobile base integrated with onboard compute, camera sensing, launcher actuation, and auxiliary electronics. Power and signal interfaces were distributed between the Raspberry Pi, OpenCR motor controller, and external actuator subsystems. The modular layout allowed independent subsystem development and replacement during testing.
 
 ### Software Architecture
@@ -32,7 +34,7 @@ States (in execution order): INIT → EXPLORE → DOCK_AT_X → ALIGN_AT_X → F
 
 ![missionfsm](assets/g2-report/missionfsm.png)
 
-High Level Mission Controller (FSM)
+<center>Fig: High Level Mission Controller (FSM)</center><br>
 
 ### Design Decisions & Rationale
 

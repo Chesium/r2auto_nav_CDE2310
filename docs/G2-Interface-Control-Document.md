@@ -4,13 +4,13 @@
 
 ## Mechanical Interfaces
 
-Layer 4
-
 ![assembly1](assets/g2-report/assembly1.png)
 
-Layer 1 & 2
+<center>Fig: Turtlebot Assembly Layer 4</center><br>
 
 ![assembly2](assets/g2-report/assembly2.png)
+
+<center>Fig: Turtlebot Assembly Layer 1 & 2</center><br>
 
 **Interfaces**
 

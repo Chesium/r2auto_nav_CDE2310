@@ -2,8 +2,6 @@
 
 [Home](../README.md)
 
-(what went wrong in the final run)
-
 ## Early System Integration and Compute Resource Planning
 
 Several issues could have been identified earlier if all nodes were integrated onto the physical robot sooner, even with limited functionality. Earlier full-system testing would have exposed power limitations, CPU overload, interface mismatches, and timing conflicts before the final mission. During operation, running docking, perception, alignment, and launcher nodes simultaneously created significant computational load on the Raspberry Pi. Future versions should migrate heavy vision workloads to a higher-performance onboard computer or optimise node efficiency to reduce latency and dropped frames.
@@ -111,7 +109,7 @@ class HoughDetectorStationA(Node):
         self.enabled             = False  # FSM enables via /aligner_a/set_enabled
 ```
 
-Hough Circle Transform Node (Station A) Part 1
+<center>Code: Hough Circle Transform Node (Station A) Part 1</center><br>
 
 ```python
     # Image callback
@@ -132,7 +130,7 @@ Hough Circle Transform Node (Station A) Part 1
             return
 ```
 
-Hough Circle Transform Node (Station A) Part 2
+<center>Code: Hough Circle Transform Node (Station A) Part 2</center><br>
 
 The aligner depended on a `/aligner_a/set_enabled` service call from the mission controller. However, in the submitted FSM, no corresponding service call was implemented when entering `ALIGN_AT_A`. As a result, the aligner remained permanently disabled throughout the run.
 
@@ -143,7 +141,7 @@ Improvement / Fix:
 - Add `/aligner_a/set_enabled(True)` when entering `ALIGN_AT_A`
 - Default the aligner to enabled during startup testing
 
-## Incorrect Station A Firing Delay Parameters [Daphne]
+## Incorrect Station A Firing Delay Parameters
 
 Observed: Station A inter-ball delays used during the graded run were `4.7 s` and `0.7 s`, instead of the TA-specified `7.0 s` and `3.0 s`.
 
@@ -167,5 +165,3 @@ Lesson learnt, trying to be oversmart and using complicated setups only makes se
 Additionally, testing the integration between aligning and docking was an absolute must we were unable to perform.
 
 We underestimated how difficult integration and communication between subsystems are in Systems Engineering.
-
-![enduserdoc](assets/g2-report/enduserdoc.png)

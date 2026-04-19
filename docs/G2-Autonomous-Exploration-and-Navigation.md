@@ -25,7 +25,7 @@ This modular decomposition differs from a software architecture where one high-l
 
 ![nav2stack](assets/g2-report/nav2stack.png)
 
-Exploration & Navigation Architecture
+<center>Fig: Exploration & Navigation Architecture</center><br>
 
 ### Navigation Stack Design
 
@@ -116,7 +116,7 @@ An additional robustness feature is frontier reactivation. If the post-explorati
 
 ![navexploreflow](assets/g2-report/navexploreflow.png)
 
-Exploration Flow
+<center>Fig: Exploration Flow</center><br>
 
 ### Tuning and Parameterisation
 
