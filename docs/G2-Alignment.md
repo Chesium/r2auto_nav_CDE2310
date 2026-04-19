@@ -1,99 +1,102 @@
-## Receptacle Alignment Subsystem
+# Receptacle Alignment Subsystem
 
 [Home](../README.md)
 
-### Overview
+## Overview
 
-The alignment subsystem uses the RPi Camera V2 (side-mounted, rotated 90° CCW) to detect the circular tin receptacle opening and align the launcher to it. Two separate nodes handle Station A and Station B respectively, sharing the same Hough-based geometric alignment logic but differing in the fire trigger mechanism.
+The receptacle alignment subsystem uses a side-mounted Raspberry Pi Camera V2, rotated 90° counter-clockwise, to detect the circular receptacle opening and align the launcher before firing. Two nodes are used: one for Station A and one for Station B. Both rely on Hough-based geometric alignment, but they differ in how the final firing event is triggered.
 
-Camera configuration note: the camera is physically rotated 90° CCW relative to the robot drive axis. Consequently, lateral alignment of the launcher maps to the Y-axis of the camera frame (not X). All offset calculations and P-controller outputs use `cy` (vertical pixel coordinate) rather than `cx`.
+Because the camera is physically rotated relative to the robot drive axis, lateral launcher alignment maps to the image `Y` axis rather than the image `X` axis. As a result, all alignment offsets and proportional-control outputs are computed using `cy` rather than `cx`.
 
 ![align7](assets/g2-report/align7.png)
 
-<p align="center">Fig: Hough Circle Transform + Y-axis P-control + Ball Launcher (Foxglove)</p><br>
+<p align="center">Fig: Hough circle detection, Y-axis P-control, and launcher monitoring in Foxglove</p><br>
 
-### Station A: Static Receptacle Alignment
+## Station A: Static Receptacle Alignment
 
-Algorithm: Hough Circle Transform + Y-axis P-control
+For Station A, the alignment process combines Hough circle detection with a proportional controller on the image `Y` axis.
 
-Processing pipeline per frame:
+### Processing Pipeline
 
-1. Decode compressed image from `/camera/image_raw/compressed`
-2. Convert to grayscale → GaussianBlur (11×11, σ=2)
-3. HoughCircles (HOUGH_GRADIENT): detect circular tin opening
-4. Select largest detected circle (most likely the receptacle)
-5. Compute offset_y = cy_detected − (frame_height / 2)
-6. Apply EMA smoother: ema_cy = α × cy_raw + (1−α) × ema_cy [α = 0.20]
-7. P-control: linear_vel = Kp × offset_y, clamped to ±0.08 m/s
-8. Publish `/cmd_vel` (linear.x only; angular.z = 0)
-9. Count consecutive aligned frames; at threshold → call `/receptacle/notify_aligned`
+For each incoming frame, the node performs the following sequence:
 
-Tuned Parameters (physical test: 22–38 cm stand-off):
+1. Decode the compressed image from `/camera/image_raw/compressed`.
+2. Convert the frame to grayscale and apply Gaussian blur.
+3. Run `HoughCircles(HOUGH_GRADIENT)` to detect candidate circular openings.
+4. Select the largest detected circle as the most likely receptacle.
+5. Compute the vertical offset, `offset_y = cy_detected - frame_height / 2`.
+6. Smooth the detected center using an exponential moving average.
+7. Apply proportional control to generate `linear.x`, clamped to the configured velocity limit.
+8. Publish `/cmd_vel` with linear motion only.
+9. Count consecutive aligned frames and call `/receptacle/notify_aligned` once the stability threshold is met.
+
+### Tuned Parameters
+
+The following parameters were tuned using physical tests at stand-off distances of approximately 22-38 cm:
 
 | Parameter | Value | Effect |
 | --- | --- | --- |
-| Kp (linear) | 0.0015 | Proportional gain; lower = smoother but slower |
-| MAX_LINEAR_VEL | 0.08 m/s | Velocity cap; prevents overshoot at close range |
-| ALIGN_THRESHOLD | 15 px | Offset band considered "aligned" |
-| ALIGN_STABLE_FRAMES | 5 | Frames alignment must hold before notifying FSM |
-| CONFIRM_FRAMES | 5 | Consecutive detections before circle is "confirmed" |
-| EMA_ALPHA | 0.20 | Low value = heavy smoothing; reduces jitter |
-| MIN_R / MAX_R | 80 / 150 px | Tuned radius window for operating distance |
-| PARAM2 (Hough) | 45 | Accumulator threshold; higher = fewer false positives |
-
-Hough Circle Transform + Y-axis P-control (Move Backward) at ~35 cm (Foxglove)
+| `Kp` (linear) | `0.0015` | Lower values produce smoother but slower convergence |
+| `MAX_LINEAR_VEL` | `0.08 m/s` | Prevents overshoot at short range |
+| `ALIGN_THRESHOLD` | `15 px` | Offset band treated as aligned |
+| `ALIGN_STABLE_FRAMES` | `5` | Number of consecutive aligned frames required before notifying the FSM |
+| `CONFIRM_FRAMES` | `5` | Number of consecutive detections required before a circle is accepted |
+| `EMA_ALPHA` | `0.20` | Heavier smoothing reduces jitter |
+| `MIN_R / MAX_R` | `80 / 150 px` | Radius window tuned to the operating distance |
+| `PARAM2` | `45` | Hough accumulator threshold balancing sensitivity and false positives |
 
 ![align6](assets/g2-report/align6.png)
 
-<p align="center">Fig: Hough Circle Transform + Y-axis P-control (Move Forward) at ~35 cm (Foxglove)</p><br>
+<p align="center">Fig: Station A alignment commanding backward motion at approximately 35 cm</p><br>
 
 ![align4](assets/g2-report/align4.png)
 
-<p align="center">Fig: Hough Circle Transform + Y-axis P-control (Aligned) at ~35 and ~28 cm (Foxglove)</p><br>
+<p align="center">Fig: Station A alignment commanding forward motion at approximately 35 cm</p><br>
 
 ![align5](assets/g2-report/align5.png)
 
-<p align="center">Fig: Hough Circle Transform + Y-axis P-control (Aligned) at ~ 22 cm (Foxglove)</p><br>
+<p align="center">Fig: Station A alignment at close range after convergence</p><br>
 
-### Station B: Moving Receptacle Alignment
+## Station B: Moving Receptacle Alignment
 
-Station B presents a moving tin receptacle on a motorised rail. Two sequential phases are used, with the bot freezing permanently after Phase 1.
+Station B presents a moving receptacle on a motorised rail, so the subsystem operates in two phases.
 
-Phase 1: Geometric Alignment (identical to Station A)
+### Phase 1: Geometric Alignment
 
-- Y-axis Hough alignment to the wooden cutout hole
-- Must hold for 5 consecutive aligned frames → LOCKED
-- Once locked, `cmd_vel` is zeroed permanently (bot never moves again)
+The robot first aligns to the wooden cutout using the same Hough-based `Y`-axis alignment strategy as Station A. Once the alignment condition is satisfied for the required number of consecutive frames, the robot is considered locked and translational motion is set to zero.
 
-Phase 2: HSV Blue LED Detection (fire trigger)
+### Phase 2: Blue LED Trigger Detection
 
-- A blue LED is mounted inside the tin receptacle
-- When the tin opening aligns with the cutout hole, the LED becomes visible
-- Detection uses HSV colour thresholding within the Hough-detected circle ROI: HSV mask parameters: H: 100–130 (blue hue range, OpenCV 0–179 scale) S: 180–255 (high saturation; filters white/ambient light) V: 200–255 (high value; LED is bright emitted light)
-- LED detection ratio: blue pixels inside circle / total circle area > 0.10
-- Confirmed after 30 consecutive positive frames (debounce against rail vibration)
-- Rising edge (LED appears) → call `/fire_launcher` service
-- BALLS_TO_FIRE = 1 per rising edge event
+After geometric alignment, the node waits for the blue LED inside the moving receptacle to become visible through the cutout. LED detection is performed within the Hough-detected circular region of interest using HSV thresholding:
 
-Tuned Parameters (physical test: 22–38 cm stand-off):
+- `H = 100-130`
+- `S = 180-255`
+- `V = 200-255`
 
-Most of the params are the same as Station A, some of them differs which shown below
+The detection ratio is defined as the number of blue pixels divided by the circle area. A firing event is confirmed only after 30 consecutive positive frames, which suppresses false triggers caused by rail vibration or transient reflections. Each rising edge in LED visibility triggers a `/fire_launcher` call, with `BALLS_TO_FIRE = 1` per event.
+
+### Station B Parameter Adjustments
+
+Most alignment parameters are shared with Station A. The following values were adjusted specifically for Station B:
 
 | Parameter | Value | Remarks |
 | --- | --- | --- |
-| EMA_ALPHA | 0.15 | Station B uses stronger smoothing |
-| CONFIRM_FRAMES | 8 | Station B needs more frames to latch |
+| `EMA_ALPHA` | `0.15` | Stronger smoothing for a noisier visual condition |
+| `CONFIRM_FRAMES` | `8` | More frames required before locking onto a valid detection |
 
-Why HSV instead of brightness/darkness thresholding? Brightness-based detection failed during testing because:
+### Rationale for HSV Detection
 
-(a) The tin interior reflects ambient light when behind the cutout, producing similar brightness values to the “not aligned” case.
+HSV-based detection was selected because brightness-only methods proved unreliable during testing.
+
+1. Reflections inside the receptacle produced brightness values similar to the aligned state even when the receptacle was not properly positioned.
+2. Dark objects behind the cutout produced false positives when thresholding was based only on intensity.
+
+By isolating a specific hue range, HSV thresholding was substantially more robust to ambient illumination changes and background variation.
 
 ![align1](assets/g2-report/align1.png)
 
-<p align="center">Fig: Brightness/Darkness Thresholding Issue in Station B (Foxglove)</p><br>
-
-(b) Dark objects behind the cutout created false positives. HSV detection isolates a specific hue, making it robust to ambient illumination changes and background content.
+<p align="center">Fig: Brightness-threshold failure case for Station B</p><br>
 
 ![align3](assets/g2-report/align3.png)
 
-<p align="center">Fig: Darkness Thresholding Issue in Station B (Foxglove)</p><br>
+<p align="center">Fig: Dark-background false positive case for Station B</p><br>

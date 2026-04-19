@@ -8,43 +8,43 @@
 
 ![schematic](assets/g2-report/schematic.png)
 
-<p align="center">Fig: System Schematic</p><br>
+<p align="center">Fig: System schematic</p><br>
 
-The robot hardware consists of a TurtleBot3 mobile base integrated with onboard compute, camera sensing, launcher actuation, and auxiliary electronics. Power and signal interfaces were distributed between the Raspberry Pi, OpenCR motor controller, and external actuator subsystems. The modular layout allowed independent subsystem development and replacement during testing.
+The hardware platform is based on a TurtleBot3 mobile base extended with onboard compute, camera sensing, launcher actuation, and supporting electrical subsystems. Power and signal routing are distributed across the Raspberry Pi, the OpenCR motor controller, and the attached peripheral devices. This modular arrangement allowed individual subsystems to be developed, tested, and replaced with minimal impact on the rest of the platform.
 
 ### Software Architecture
 
-The software system follows a modular ROS 2 node-based architecture. A central mission controller supervises the overall task flow, while specialised worker nodes perform perception, docking, alignment, exploration, and ball launching. Nodes communicate through ROS 2 topics and services, enabling each subsystem to be independently developed, tested, and replaced without redesigning the full system.
+The software stack follows a modular ROS 2 node-based architecture. A central mission controller coordinates overall task sequencing, while specialised worker nodes handle docking, receptacle alignment, exploration, perception, and ball launching. The nodes communicate through ROS 2 topics and services, allowing each subsystem to be developed independently while maintaining clear runtime interfaces.
 
 ## Mission Logic Architecture Selection
 
-An initial Behaviour Tree implementation using Groot2 and BehaviorTree.CPP was evaluated during early development. However, the final mission requirements were largely sequential, with limited need for behaviour interruption or dynamic replanning. The Behaviour Tree approach introduced additional development overhead, debugging complexity, and tooling instability relative to project timelines.
+An initial Behaviour Tree implementation using Groot2 and BehaviorTree.CPP was evaluated during early development. However, the final mission requirements were largely sequential and required limited interruption or dynamic replanning. In practice, the Behaviour Tree approach introduced additional implementation overhead, debugging complexity, and tooling instability relative to the project timeline.
 
-The team therefore migrated to a Python-based Finite State Machine (FSM), which provided faster implementation, deterministic execution, simpler debugging, and better suitability for the fixed competition task sequence.
+The team therefore migrated to a Python-based finite state machine (FSM). This choice provided deterministic execution, faster implementation, and a simpler debugging workflow, while still matching the fixed sequence of tasks required by the competition.
 
 ## Mission Controller Design
 
 ### Overview
 
-The mission controller (`mission_controller.py`) is the sole decision-making authority in the system. All other nodes, perception, alignment, and actuation, are stateless workers that respond to service calls or publish sensor data. The FSM runs at 10 Hz and coordinates the full delivery sequence across both stations without Nav2 navigation; instead, docking is achieved through a visual-servo approach (`simple_aruco_dock`) based on ArUco marker PnP pose.
+The mission controller (`mission_controller.py`) is the sole decision-making authority in the system. All other nodes act as specialised workers that publish observations or respond to service requests. The FSM runs at 10 Hz and coordinates the full delivery sequence across both stations. Long-range navigation is handled through exploration and Nav2, while close-range docking is delegated to the visual-servo subsystem based on ArUco pose estimation.
 
 ### FSM Graph
 
-States (in execution order): INIT → EXPLORE → DOCK_AT_X → ALIGN_AT_X → FIRE_AT_X → COMPLETE ↘ FAILED (retry loop)
+State flow: `INIT → EXPLORE → DOCK_AT_X → ALIGN_AT_X → FIRE_AT_X → COMPLETE`, with fallback transitions into `FAILED` for retry handling.
 
 ![missionfsm](assets/g2-report/missionfsm.png)
 
-<p align="center">Fig: High Level Mission Controller (FSM)</p><br>
+<p align="center">Fig: High-level mission controller FSM</p><br>
 
-### Design Decisions & Rationale
+### Design Decisions and Rationale
 
 | Decision | Rationale |
 | --- | --- |
-| No Nav2 for docking; visual servo instead | Nav2 requires a pre-built map. Visual servo directly uses ArUco pose. It is more reliable at short range and eliminates localisation error accumulation. |
-| FSM at 10 Hz, not event-driven | Predictable tick rate simplifies timeout handling and avoids callback race conditions. State transitions are idempotent within a tick. |
-| Station B fires autonomously (aligner owns /fire_launcher ) | Moving target timing cannot be pre-scheduled. The aligner uses LED rising-edge detection which is inherently reactive, the FSM cannot respond fast enough. |
-| ROS 2 parameters for delays | Delays were specified by TA in Week 7. Using parameters avoids a code edit and restart during the 25-minute window. |
+| Use visual servoing rather than Nav2 for final docking | Final approach is a short-range perception problem. ArUco-based visual servoing is less dependent on global localisation quality and avoids compounding map and pose error close to the target. |
+| Run the FSM at 10 Hz rather than as a purely event-driven system | A fixed control tick simplifies timeout handling, keeps state transitions predictable, and reduces the likelihood of callback-order race conditions. |
+| Allow Station B to trigger firing autonomously | The moving target at Station B requires a reactive trigger based on LED visibility. This response is more reliable when handled directly by the aligner than by a slower supervisory loop. |
+| Expose timing values as ROS 2 parameters | Timing constraints changed during development. Parameterisation allowed the team to update mission behaviour without editing code or rebuilding the software stack. |
 
 ### Fault Handling and Robustness Strategy
 
-The mission controller incorporates timeout detection, retry logic, and fallback transitions. If docking or alignment fails repeatedly, the affected station is skipped and the robot proceeds to remaining objectives where possible. This prevents total mission failure due to a single subsystem malfunction.
+The mission controller incorporates timeout detection, retry limits, and fallback transitions. If docking or alignment fails repeatedly at a given station, the controller can skip that station and continue with the remaining objectives where possible. This design reduces the risk that a single subsystem failure will terminate the entire mission.

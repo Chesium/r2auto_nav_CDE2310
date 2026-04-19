@@ -1,7 +1,7 @@
-## Visual Servo / Aruco Docking Subsystem
+# Visual Servo and ArUco Docking Subsystem
 
 [Home](../README.md)
 
-### Overview
+## Overview
 
 The algorithm uses solvePnP to do thi
