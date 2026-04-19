@@ -12,7 +12,7 @@ Mechanical Subsystem Drawings
 
 ![cad2](assets/g2-report/cad2.png)
 
-## Visual Servo/ Aruco Docking [Arnav]
+## Visual Servo/ Aruco Docking
 
 ### Overview
 

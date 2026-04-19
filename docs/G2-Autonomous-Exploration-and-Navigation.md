@@ -4,11 +4,11 @@
 
 ### Overview
 
-Our autonomous exploration and navigation stack is organised as a layered ROS 2 system rather than a single monolithic controller. Cartographer is responsible for online 2D SLAM and continuously publishes the occupancy grid and TF transforms required for navigation. Nav2 is responsible for global path planning, local trajectory control, costmaps, and recovery behaviours. On top of these, our custom g3g_frontier_exploration package determines where the robot should explore next and supervises exploration progress.
+Our autonomous exploration and navigation stack is organised as a layered ROS 2 system rather than a single monolithic controller. Cartographer is responsible for online 2D SLAM and continuously publishes the occupancy grid and TF transforms required for navigation. Nav2 is responsible for global path planning, local trajectory control, costmaps, and recovery behaviours. On top of these, our custom `g3g_frontier_exploration` package determines where the robot should explore next and supervises exploration progress.
 
 This separation of responsibilities was intentional. The exploration node does not attempt to solve low-level path planning or motion control by itself. Instead, it focuses on selecting meaningful exploration goals from the live occupancy grid, while Nav2 handles whether those goals are reachable and how the robot should move to them safely. Compared to a simpler nearest-frontier implementation, this architecture makes the system easier to tune, easier to debug, and more robust when exploration goals become stale, blocked, or unproductive.
 
-At system bring-up, the g3nav2 package launches Cartographer, Nav2, RViz, and the frontier exploration stack from a single top-level launch file. This satisfies the project objective of operating the robot through a unified ROS 2 software launch while keeping the software internally modular.
+At system bring-up, the `g3nav2` package launches Cartographer, Nav2, RViz, and the frontier exploration stack from a single top-level launch file. This satisfies the project objective of operating the robot through a unified ROS 2 software launch while keeping the software internally modular.
 
 ### Software Architecture
 
@@ -16,10 +16,10 @@ The navigation and exploration subsystem is composed of the following main compo
 
 | Component | Package / Node | Primary Responsibility | Key Interfaces |
 | --- | --- | --- | --- |
-| SLAM | cartographer_node , cartographer_occupancy_grid_node | Build and update the 2D occupancy map during exploration | /map , map -> odom -> base_link TF |
-| Navigation | Nav2 stack in g3nav2 | Compute global paths, generate local trajectories, maintain costmaps, execute recovery behaviours | NavigateToPose , ComputePathToPose , costmaps |
-| Frontier exploration | frontier_explorer in g3g_frontier_exploration | Detect frontiers, rank exploration candidates, dispatch exploration goals, detect exploration completion | /map , TF, /exploration/current_goal , /exploration_complete , /exploration/set_enabled |
-| Post-exploration coverage | post_exploration_traverser in g3g_frontier_exploration | Continue traversing useful reachable free space after frontiers are exhausted | /post_exploration/current_goal , /exploration_complete , /exploration/set_enabled |
+| SLAM | `cartographer_node` , `cartographer_occupancy_grid_node` | Build and update the 2D occupancy map during exploration | `/map` , `map -> odom -> base_link` TF |
+| Navigation | Nav2 stack in `g3nav2` | Compute global paths, generate local trajectories, maintain costmaps, execute recovery behaviours | `NavigateToPose` , `ComputePathToPose` , costmaps |
+| Frontier exploration | `frontier_explorer` in `g3g_frontier_exploration` | Detect frontiers, rank exploration candidates, dispatch exploration goals, detect exploration completion | `/map` , TF, `/exploration/current_goal` , `/exploration_complete` , `/exploration/set_enabled` |
+| Post-exploration coverage | `post_exploration_traverser` in `g3g_frontier_exploration` | Continue traversing useful reachable free space after frontiers are exhausted | `/post_exploration/current_goal` , `/exploration_complete` , `/exploration/set_enabled` |
 
 This modular decomposition differs from a software architecture where one high-level controller owns all exploration logic internally. In our system, the mission controller can remain focused on mission sequencing, while the exploration package exposes clear interfaces for enabling exploration, detecting completion, and handing control back when the map changes.
 
@@ -29,7 +29,7 @@ Exploration & Navigation Architecture
 
 ### Navigation Stack Design
 
-For autonomous transit within the maze, we use the Nav2 stack configured in the g3nav2 package. The global planner is nav2_navfn_planner::NavfnPlanner, and the local controller is the MPPI controller. The global and local costmaps both use laser-based obstacle marking and inflation layers to maintain clearance from walls and dynamic obstacles.
+For autonomous transit within the maze, we use the Nav2 stack configured in the `g3nav2` package. The global planner is `nav2_navfn_planner::NavfnPlanner`, and the local controller is the MPPI controller. The global and local costmaps both use laser-based obstacle marking and inflation layers to maintain clearance from walls and dynamic obstacles.
 
 We selected this stack because it cleanly separates deliberation and control:
 
@@ -48,9 +48,9 @@ A basic frontier strategy would simply choose the nearest cell on the known-unkn
 
 #### Frontier Extraction Pipeline
 
-The frontier_explorer node runs a planning loop once the map, TF transform, and Nav2 action servers are available. During each planning cycle, the node performs the following steps:
+The `frontier_explorer` node runs a planning loop once the map, TF transform, and Nav2 action servers are available. During each planning cycle, the node performs the following steps:
 
-1. Read the current occupancy grid and robot pose in the map frame.
+1. Read the current occupancy grid and robot pose in the `map` frame.
 2. Detect raw frontier cells, defined as free cells that border unknown cells.
 3. Evaluate each candidate frontier cell using several local quality metrics.
 4. Cluster valid frontier cells into connected frontier regions.
@@ -108,11 +108,11 @@ Our node therefore performs an encapsulation check on the free-space region conn
 
 ### Post-Exploration Traversal
 
-Exploration completion in our system does not necessarily mean the robot stops moving immediately. After the frontier explorer publishes /exploration_complete, a second node called post_exploration_traverser becomes active. This node samples reachable free-space viewpoints and ranks them according to how much occupied structure and unknown space they can still observe, together with path cost and clearance.
+Exploration completion in our system does not necessarily mean the robot stops moving immediately. After the frontier explorer publishes `/exploration_complete`, a second node called `post_exploration_traverser` becomes active. This node samples reachable free-space viewpoints and ranks them according to how much occupied structure and unknown space they can still observe, together with path cost and clearance.
 
 The purpose of this stage is to improve residual map coverage and to move the robot through meaningful reachable space even after the primary frontier set has been exhausted. This is useful when a frontier-based strategy has already covered all large openings, but there are still beneficial observation positions inside the known free-space component.
 
-An additional robustness feature is frontier reactivation. If the post-exploration traverser detects that meaningful frontiers have reopened, for example because a new map update revealed fresh unknown boundaries, it hands control back to the frontier explorer through the /exploration/set_enabled service. This makes the overall exploration architecture adaptive rather than strictly one-way.
+An additional robustness feature is frontier reactivation. If the post-exploration traverser detects that meaningful frontiers have reopened, for example because a new map update revealed fresh unknown boundaries, it hands control back to the frontier explorer through the `/exploration/set_enabled` service. This makes the overall exploration architecture adaptive rather than strictly one-way.
 
 ![navexploreflow](assets/g2-report/navexploreflow.png)
 
@@ -156,15 +156,15 @@ The table below summarises the most important tunable parameters in our current 
 
 | Parameter | Meaning | Current value | Effect of increasing the value |
 | --- | --- | --- | --- |
-| frontier_min_cluster_size | Minimum number of frontier cells required for a cluster to be considered meaningful | 8 | Rejects more small frontier fragments, reducing noise but possibly missing narrow openings |
-| min_goal_distance | Minimum allowed distance between the robot and a selected frontier goal | 0.8 m | Pushes goals farther away, reducing trivial nearby targets but making short local refinements less likely |
-| max_frontier_occupied_ratio | Maximum allowed obstacle density around a frontier candidate within the local window | 0.45 | Accepts more cluttered frontier regions, increasing exploration aggressiveness but also risk of poor goals near walls |
-| candidate_clearance_radius | Minimum local clearance required around a frontier candidate | 1 cell | Enforces safer stand-off from obstacles, but may reject valid frontiers in tight spaces |
-| goal_timeout_sec | Maximum time allowed for a frontier goal before the node cancels and blacklists it | 15.0 s | Makes the explorer more patient with difficult paths, but slows recovery from genuinely bad goals |
-| min_information_gain_cells | Minimum reduction in nearby unknown cells required to treat a reached frontier as useful | 2 cells | Requires stronger map expansion before a goal is considered successful, making the explorer more selective |
-| encapsulation_confirmation_cycles | Number of consecutive enclosed-space detections required before exploration is declared complete | 3 cycles | Makes completion more conservative and less sensitive to transient map artifacts |
-| robot_radius | Effective robot body radius used by Nav2 costmaps for collision checking | 0.10 m | Expands the robot footprint in planning, improving safety margin but reducing passage through tight gaps |
-| inflation_radius | Costmap obstacle inflation distance around occupied cells | 0.35 m | Increases obstacle buffer and path clearance, but can make narrow corridors appear less traversable |
+| `frontier_min_cluster_size` | Minimum number of frontier cells required for a cluster to be considered meaningful | 8 | Rejects more small frontier fragments, reducing noise but possibly missing narrow openings |
+| `min_goal_distance` | Minimum allowed distance between the robot and a selected frontier goal | 0.8 m | Pushes goals farther away, reducing trivial nearby targets but making short local refinements less likely |
+| `max_frontier_occupied_ratio` | Maximum allowed obstacle density around a frontier candidate within the local window | 0.45 | Accepts more cluttered frontier regions, increasing exploration aggressiveness but also risk of poor goals near walls |
+| `candidate_clearance_radius` | Minimum local clearance required around a frontier candidate | 1 cell | Enforces safer stand-off from obstacles, but may reject valid frontiers in tight spaces |
+| `goal_timeout_sec` | Maximum time allowed for a frontier goal before the node cancels and blacklists it | 15.0 s | Makes the explorer more patient with difficult paths, but slows recovery from genuinely bad goals |
+| `min_information_gain_cells` | Minimum reduction in nearby unknown cells required to treat a reached frontier as useful | 2 cells | Requires stronger map expansion before a goal is considered successful, making the explorer more selective |
+| `encapsulation_confirmation_cycles` | Number of consecutive enclosed-space detections required before exploration is declared complete | 3 cycles | Makes completion more conservative and less sensitive to transient map artifacts |
+| `robot_radius` | Effective robot body radius used by Nav2 costmaps for collision checking | 0.10 m | Expands the robot footprint in planning, improving safety margin but reducing passage through tight gaps |
+| `inflation_radius` | Costmap obstacle inflation distance around occupied cells | 0.35 m | Increases obstacle buffer and path clearance, but can make narrow corridors appear less traversable |
 
 ### Design Decisions and Rationale
 

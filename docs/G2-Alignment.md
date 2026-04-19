@@ -6,7 +6,7 @@
 
 The alignment subsystem uses the RPi Camera V2 (side-mounted, rotated 90° CCW) to detect the circular tin receptacle opening and align the launcher to it. Two separate nodes handle Station A and Station B respectively, sharing the same Hough-based geometric alignment logic but differing in the fire trigger mechanism.
 
-Camera configuration note: the camera is physically rotated 90° CCW relative to the robot drive axis. Consequently, lateral alignment of the launcher maps to the Y-axis of the camera frame (not X). All offset calculations and P-controller outputs use cy (vertical pixel coordinate) rather than cx.
+Camera configuration note: the camera is physically rotated 90° CCW relative to the robot drive axis. Consequently, lateral alignment of the launcher maps to the Y-axis of the camera frame (not X). All offset calculations and P-controller outputs use `cy` (vertical pixel coordinate) rather than `cx`.
 
 ![align7](assets/g2-report/align7.png)
 
@@ -18,15 +18,15 @@ Algorithm: Hough Circle Transform + Y-axis P-control
 
 Processing pipeline per frame:
 
-1. Decode compressed image from /camera/image_raw/compressed
+1. Decode compressed image from `/camera/image_raw/compressed`
 2. Convert to grayscale → GaussianBlur (11×11, σ=2)
 3. HoughCircles (HOUGH_GRADIENT): detect circular tin opening
 4. Select largest detected circle (most likely the receptacle)
 5. Compute offset_y = cy_detected − (frame_height / 2)
 6. Apply EMA smoother: ema_cy = α × cy_raw + (1−α) × ema_cy [α = 0.20]
 7. P-control: linear_vel = Kp × offset_y, clamped to ±0.08 m/s
-8. Publish /cmd_vel (linear.x only; angular.z = 0)
-9. Count consecutive aligned frames; at threshold → call /receptacle/notify_aligned
+8. Publish `/cmd_vel` (linear.x only; angular.z = 0)
+9. Count consecutive aligned frames; at threshold → call `/receptacle/notify_aligned`
 
 Tuned Parameters (physical test: 22–38 cm stand-off):
 
@@ -63,7 +63,7 @@ Phase 1: Geometric Alignment (identical to Station A)
 
 - Y-axis Hough alignment to the wooden cutout hole
 - Must hold for 5 consecutive aligned frames → LOCKED
-- Once locked, cmd_vel is zeroed permanently (bot never moves again)
+- Once locked, `cmd_vel` is zeroed permanently (bot never moves again)
 
 Phase 2: HSV Blue LED Detection (fire trigger)
 
@@ -72,7 +72,7 @@ Phase 2: HSV Blue LED Detection (fire trigger)
 - Detection uses HSV colour thresholding within the Hough-detected circle ROI: HSV mask parameters: H: 100–130 (blue hue range, OpenCV 0–179 scale) S: 180–255 (high saturation; filters white/ambient light) V: 200–255 (high value; LED is bright emitted light)
 - LED detection ratio: blue pixels inside circle / total circle area > 0.10
 - Confirmed after 30 consecutive positive frames (debounce against rail vibration)
-- Rising edge (LED appears) → call /fire_launcher service
+- Rising edge (LED appears) → call `/fire_launcher` service
 - BALLS_TO_FIRE = 1 per rising edge event
 
 Tuned Parameters (physical test: 22–38 cm stand-off):
