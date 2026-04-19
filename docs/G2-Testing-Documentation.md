@@ -54,7 +54,7 @@ Our servo’s physical functionality is limited due to its hardware inconsistenc
 
 ![dock1](assets/g2-report/launcher_stationatest.png)
 
-<center>Fig: Left 1 & 2 - First test at original angle, Left 3 & 4 - Second test after increasing launcher angle</center><br>
+<p align="center">Fig: Left 1 & 2 - First test at original angle, Left 3 & 4 - Second test after increasing launcher angle</p><br>
 
 ### 5. Alignment with Rpi Camera Integration Test
 
@@ -86,11 +86,11 @@ To preliminarily validate the logic of our frontier_exploration node, we initial
 
 ![sim2](assets/g2-report/sim2.png)]
 
-<center>Fig: The simulator environment we used for the initial exploration test.</center><br>
+<p align="center">Fig: The simulator environment we used for the initial exploration test.</p><br>
 
 ![sim1](assets/g2-report/sim1.png)
 
-<center>Fig: A screenshot of the map being displayed in the RViz in our initial exploration test. The blue cells are the frontiers identified by the explorer node.</center><br>
+<p align="center">Fig: A screenshot of the map being displayed in the RViz in our initial exploration test. The blue cells are the frontiers identified by the explorer node.</p><br>
 
 ## Cam and servo integration issues
 

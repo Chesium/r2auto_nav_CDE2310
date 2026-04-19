@@ -109,7 +109,7 @@ class HoughDetectorStationA(Node):
         self.enabled             = False  # FSM enables via /aligner_a/set_enabled
 ```
 
-<center>Code: Hough Circle Transform Node (Station A) Part 1</center><br>
+<p align="center">Code: Hough Circle Transform Node (Station A) Part 1</p><br>
 
 ```python
     # Image callback
@@ -130,7 +130,7 @@ class HoughDetectorStationA(Node):
             return
 ```
 
-<center>Code: Hough Circle Transform Node (Station A) Part 2</center><br>
+<p align="center">Code: Hough Circle Transform Node (Station A) Part 2</p><br>
 
 The aligner depended on a `/aligner_a/set_enabled` service call from the mission controller. However, in the submitted FSM, no corresponding service call was implemented when entering `ALIGN_AT_A`. As a result, the aligner remained permanently disabled throughout the run.
 

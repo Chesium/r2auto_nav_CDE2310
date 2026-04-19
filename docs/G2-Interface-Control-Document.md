@@ -6,11 +6,11 @@
 
 ![assembly1](assets/g2-report/assembly1.png)
 
-<center>Fig: Turtlebot Assembly Layer 4</center><br>
+<p align="center">Fig: Turtlebot Assembly Layer 4</p><br>
 
 ![assembly2](assets/g2-report/assembly2.png)
 
-<center>Fig: Turtlebot Assembly Layer 1 & 2</center><br>
+<p align="center">Fig: Turtlebot Assembly Layer 1 & 2</p><br>
 
 **Interfaces**
 

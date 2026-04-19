@@ -8,4 +8,4 @@ The ball launcher uses a 25 kg-cm JOHO UART bus servo operated in DC motor mode,
 
 ![cad2](assets/g2-report/cad2.png)
 
-<center>Fig: Mechanical Subsystem Drawings</center><br>
+<p align="center">Fig: Mechanical Subsystem Drawings</p><br>

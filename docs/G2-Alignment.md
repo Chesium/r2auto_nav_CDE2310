@@ -10,7 +10,7 @@ Camera configuration note: the camera is physically rotated 90° CCW relative to
 
 ![align7](assets/g2-report/align7.png)
 
-<center>Fig: Hough Circle Transform + Y-axis P-control + Ball Launcher (Foxglove)</center><br>
+<p align="center">Fig: Hough Circle Transform + Y-axis P-control + Ball Launcher (Foxglove)</p><br>
 
 ### Station A: Static Receptacle Alignment
 
@@ -45,15 +45,15 @@ Hough Circle Transform + Y-axis P-control (Move Backward) at ~35 cm (Foxglove)
 
 ![align6](assets/g2-report/align6.png)
 
-<center>Fig: Hough Circle Transform + Y-axis P-control (Move Forward) at ~35 cm (Foxglove)</center><br>
+<p align="center">Fig: Hough Circle Transform + Y-axis P-control (Move Forward) at ~35 cm (Foxglove)</p><br>
 
 ![align4](assets/g2-report/align4.png)
 
-<center>Fig: Hough Circle Transform + Y-axis P-control (Aligned) at ~35 and ~28 cm (Foxglove)</center><br>
+<p align="center">Fig: Hough Circle Transform + Y-axis P-control (Aligned) at ~35 and ~28 cm (Foxglove)</p><br>
 
 ![align5](assets/g2-report/align5.png)
 
-<center>Fig: Hough Circle Transform + Y-axis P-control (Aligned) at ~ 22 cm (Foxglove)</center><br>
+<p align="center">Fig: Hough Circle Transform + Y-axis P-control (Aligned) at ~ 22 cm (Foxglove)</p><br>
 
 ### Station B: Moving Receptacle Alignment
 
@@ -90,10 +90,10 @@ Why HSV instead of brightness/darkness thresholding? Brightness-based detection 
 
 ![align1](assets/g2-report/align1.png)
 
-<center>Fig: Brightness/Darkness Thresholding Issue in Station B (Foxglove)</center><br>
+<p align="center">Fig: Brightness/Darkness Thresholding Issue in Station B (Foxglove)</p><br>
 
 (b) Dark objects behind the cutout created false positives. HSV detection isolates a specific hue, making it robust to ambient illumination changes and background content.
 
 ![align3](assets/g2-report/align3.png)
 
-<center>Fig: Darkness Thresholding Issue in Station B (Foxglove)</center><br>
+<p align="center">Fig: Darkness Thresholding Issue in Station B (Foxglove)</p><br>

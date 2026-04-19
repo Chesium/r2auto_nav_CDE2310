@@ -48,7 +48,7 @@ To improve this workflow, we created several `tmux` scripts that automatically o
 
 ![tmux](assets/g2-report/tmux.png)
 
-<center>Fig: Panels opened by one of the tmux scripts, from top to bottom, left to right: Cartographer, RViz, Exploration and Nav 2 Stack</center><br>
+<p align="center">Fig: Panels opened by one of the tmux scripts, from top to bottom, left to right: Cartographer, RViz, Exploration and Nav 2 Stack</p><br>
 
 ### Visualisation and Runtime Monitoring
 
@@ -56,4 +56,4 @@ In addition to RViz, we also adopted Foxglove as a more modern dashboard platfor
 
 ![foxglove1](assets/g2-report/foxglove1.png)
 
-<center>Fig: A screenshot of our Foxglove dashboard</center><br>
+<p align="center">Fig: A screenshot of our Foxglove dashboard</p><br>
