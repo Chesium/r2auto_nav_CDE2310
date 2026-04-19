@@ -117,8 +117,8 @@ stateDiagram-v2
 | --- | --- | --- | --- | --- | --- |
 | 1 | `IDLE` | Node startup or `/aruco_dock/scan` | Passive marker scan only; publish station pose when marker is seen | Service call `/aruco_dock/dock_to_a` | `APPROACHING` |
 | 2 | `APPROACHING` | `_begin_approach()` resets EMAs, integrator, counters, timestamps | Detect target marker; EMA-smooth bearing & distance; run PI control; publish `/cmd_vel` | Dwell (5 frames within tolerance) → success; marker lost > 10 frames / 300 s timeout / stop service → failure | `POST_TURN` or `FAILED` |
-| 3 | `POST_TURN` | Successful dwell in `APPROACHING` | 20 ms timer: P-controller on yaw toward `odom_yaw + a` | `|yaw_err| ≤ 2°` | `POST_SHIFT` |
-| 4 | `POST_SHIFT` | Post-turn complete | 20 ms timer: drive backward at 0.04 m/s; track Euclidean odom distance | Traveled ≥ `|Δ| − 0.04 m` | `DONE` |
+| 3 | `POST_TURN` | Successful dwell in `APPROACHING` | 20 ms timer: P-controller on yaw toward `odom_yaw + a` | `\|yaw_err\| ≤ 2°` | `POST_SHIFT` |
+| 4 | `POST_SHIFT` | Post-turn complete | 20 ms timer: drive backward at 0.04 m/s; track Euclidean odom distance | Traveled ≥ `\|Δ\| − 0.04 m` | `DONE` |
 | 5 | `DONE` | Post-shift complete | Publish `Bool(true)` on `/aruco_dock/done` | — | Returns to `IDLE` on next service call |
 | 6 | `FAILED` | Timeout / marker lost / stop | Stop robot; cancel post-timers | — | Publish `Bool(false)`; mission FSM returns to `EXPLORE` |
 
@@ -134,9 +134,9 @@ stateDiagram-v2
 | 6 | Compute measurements | `bearing = atan2(tx, tz)`; `distance = tz − 0.08`; `lateral = tx`; `normal_yaw` from `Rodrigues(rvec)` |
 | 7 | Timeout check | Abort if elapsed > 300 s |
 | 8 | EMA smoothing | α = 0.3 on bearing and distance |
-| 9 | Dwell check (before control) | `|d − 0.30| < 0.04` or `d_raw ≤ 0.30` → `dwell_count++`; 5 in a row → DONE |
+| 9 | Dwell check (before control) | `\|d − 0.30\| < 0.04` or `d_raw ≤ 0.30` → `dwell_count++`; 5 in a row → DONE |
 | 10 | Angular command | `ωz = clip(−1.2 · bearing, ±0.05 rad/s)` |
-| 11 | Linear PI with anti-windup | `Kp = 0.5`, `Ki = 0.08`; integrate only if `|bearing| < 15°` and unsaturated; `vx = clip(PI, 0, 0.02 m/s)` |
+| 11 | Linear PI with anti-windup | `Kp = 0.5`, `Ki = 0.08`; integrate only if `\|bearing\| < 15°` and unsaturated; `vx = clip(PI, 0, 0.02 m/s)` |
 | 12 | Hold if inside tolerance | If `d_ema ≤ 0.30 + 0.04`: `vx = ωz = 0`, reset integrator |
 | 13 | Publish `/cmd_vel` (`TwistStamped`) | Frame `base_link` |
 | 14 | Marker-loss policy | < 3 frames: coast; 3–10: stop & zero integrator; ≥ 10: FAIL |
@@ -145,8 +145,8 @@ stateDiagram-v2
 
 | Stage | Purpose | Control loop (20 ms timer) | Completion |
 | --- | --- | --- | --- |
-| Post-turn | Orient wall to robot's left (marker normal → −90° in camera frame) | `ωz = clip(0.5 · ccw_err, 0, 0.12 rad/s)` toward `target_yaw = odom_yaw + a`, with `a = ccw_angle(normal_yaw, −90°)` | `|yaw_err| ≤ 2°` |
-| Post-shift | Re-centre `base_link` on the marker after the turn | Drive at −0.04 m/s; track Euclidean odom distance | Traveled ≥ `|Δ| − 0.04 m`, where `Δ = −x·sin(a) − r·(1 − cos(a))`, `x = pre-turn tvec[0]`, `r = 0.08 m` |
+| Post-turn | Orient wall to robot's left (marker normal → −90° in camera frame) | `ωz = clip(0.5 · ccw_err, 0, 0.12 rad/s)` toward `target_yaw = odom_yaw + a`, with `a = ccw_angle(normal_yaw, −90°)` | `\|yaw_err\| ≤ 2°` |
+| Post-shift | Re-centre `base_link` on the marker after the turn | Drive at −0.04 m/s; track Euclidean odom distance | Traveled ≥ `\|Δ\| − 0.04 m`, where `Δ = −x·sin(a) − r·(1 − cos(a))`, `x = pre-turn tvec[0]`, `r = 0.08 m` |
 | Publish done | Hand control back to mission FSM | `Bool(true)` on `/aruco_dock/done` | — |
 
 ### Key Parameters
