@@ -12,8 +12,6 @@
 
 <p align="center">Fig: Turtlebot Assembly Layer 1 & 2</p><br>
 
-**Interfaces**
-
 | Component 1 | Component 2 | Connection via |
 | --- | --- | --- |
 | Turtlebot Layer 4 | USB Camera Mount | 2x M2 nut and bolts |
@@ -63,7 +61,7 @@ simple_aruco_dock operates in two modes: passive scanning during EXPLORE (publis
 
 | Interface | Type | Nodes / Direction | Trigger | Data Type | Description |
 | --- | --- | --- | --- | --- | --- |
-| /station_a_pose | Topic | simple_aruco_dock → mission_controller | Marker 42 detected during passive scan | PoseStamped | Camera-frame pose with distance in z. Published once per station until /aruco_dock/scan resets. FSM callback sets stations["A"]["found"] = True. |
+| /station_a_pose | Topic | simple_aruco_dock → mission_controller | Marker 42 detected during passive scan | PoseStamped | Camera-frame pose with distance in z. Published once per station until /aruco_dock/scan resets. FSM callback sets `stations["A"]["found"] = True`. |
 | /station_b_pose | Topic | simple_aruco_dock → mission_controller | Marker 67 detected during passive scan | PoseStamped | Same as above for Station B. |
 | /aruco_dock/dock_to_a | Service | mission_controller → simple_aruco_dock | FSM enters DOCK_AT_A | Trigger | Switches dock node from passive scanning to active PI approach toward marker 42. Includes post-turn and post-shift maneuvers after reaching target distance. |
 | /aruco_dock/dock_to_b | Service | mission_controller → simple_aruco_dock | FSM enters DOCK_AT_B | Trigger | Same as dock_to_a but targets marker 67. |
