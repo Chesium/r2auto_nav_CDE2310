@@ -4,23 +4,19 @@
 
 (Before graded run, while preparing for the graded run)
 
-## Launcher & Mechanical [Abhi & Chengsi]
+## Launcher & Mechanical
 
 Our servo’s physical functionality is limited due to its hardware inconsistency. Although the source code and documentation does provide the option to turn counterclockwise, which is completely possible in Servo Mode, we needed it to turn in DC mode in order to turn more than 1 full around, which the motor was not able to accomplish. Since the existing Cam was designed for the servo to rotate counterclockwise to load and launch the ball, we had to redesign and reprint the entire cam which added to additional overhead, proving that empirical observations and theoretical predictions can differ vastly.
 
-1. Proof-of-concept Test
+## 1. Proof-of-concept Test
 
 Aim: Establish cam mechanism as a viable method for shooting ping pong balls from 20-30cm away.
 
 Outcome: successful
 
-![launch15](assets/g2-report/launch15.jpg)
+![launch15](assets/g2-report/launcher_proofofconcept.png)
 
-![launch4](assets/g2-report/launch4.jpg)
-
-![launch2](assets/g2-report/launch2.jpg)
-
-1. Isolated Test with Tin
+## 2. Isolated Test with Tin
 
 Aim: Test ball shooting into tin.
 
@@ -28,15 +24,9 @@ Outcome: able to shoot into tin, but is inconsistent
 
 Action: Conduct another test to identify the source of inconsistency. Then redo the isolated test.
 
-![launch10](assets/g2-report/launch10.png)
+![launch10](assets/g2-report/launcher_isolatedtestwithtin.png)
 
-![launch3](assets/g2-report/launch3.png)
-
-![launch6](assets/g2-report/launch6.png)
-
-![launch5](assets/g2-report/launch5.png)
-
-1. Inconsistency Check Test
+## 3. Inconsistency Check Test
 
 Aim: Identify source of inconsistency
 
@@ -56,13 +46,9 @@ Solution 2: File one cam’s edge to make it consistent with the other
 
 Solution 3: Moved tape closer to front of launcher, ensuring tape to be outside of sticker range of motion
 
-![launch7](assets/g2-report/launch7.png)
+![launch7](assets/g2-report/launcher_inconsistencycheck.png)
 
-![launch9](assets/g2-report/launch9.png)
-
-![launch1](assets/g2-report/launch1.png)
-
-1. Station A Test
+## 4. Station A Test
 
 Aim: Test ball shooting inside the maze tin
 
@@ -74,25 +60,15 @@ First test at original angle
 
 Second test after increasing launcher angle
 
-![dock1](assets/g2-report/dock1.png)
+![dock1](assets/g2-report/launcher_stationatest.png)
 
-![launch8](assets/g2-report/launch8.png)
-
-![launch14](assets/g2-report/launch14.png)
-
-![launch12](assets/g2-report/launch12.png)
-
-1. Alignment with Rpi Camera Integration Test
+## 5. Alignment with Rpi Camera Integration Test
 
 Aim: Test if launcher is accurate when Rpi camera detects hough circle
 
 Outcome: Successful: repositioned cam until launcher shot accurately.
 
-![launch13](assets/g2-report/launch13.jpg)
-
-![launch11](assets/g2-report/launch11.jpg)
-
-![align2](assets/g2-report/align2.jpg)
+![launch13](assets/g2-report/launcher_alignmenttest.png)
 
 ## Receptacle Alignment
 
