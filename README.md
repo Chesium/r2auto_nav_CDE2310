@@ -9,7 +9,7 @@ The robot was designed to explore an unknown maze, identify two target stations,
 
 Course page: [CDE2310/EG2310 AY2526](https://blog.nus.edu.sg/eg2310/2026-2/)
 
-## Final Run
+## Final Run (14 April 2026, Week 13 Tue)
 
 - [Final run screen recording, part 1](https://www.youtube.com/watch?v=hjtmTSh4A78)
 - [Final run screen recording, part 2](https://www.youtube.com/watch?v=OZwQptIx55s)
@@ -17,6 +17,14 @@ Course page: [CDE2310/EG2310 AY2526](https://blog.nus.edu.sg/eg2310/2026-2/)
 The final run did not reflect the system we hoped to demonstrate. Our team ended up with the lowest final-run score, mainly because the frontier mapping and Nav2 mission flow did not come together reliably during full-system integration. That result was disappointing, but it also made the project a useful record of what worked, what did not, and what we would do differently.
 
 Despite the difficult final demonstration, the project was still valuable. I eventually received an A- for the course, and I suspect the documentation and engineering reflection captured in this repository helped compensate for the weak final run. I entered the course without a Nav2 background, and the work here gave me practical experience with ROS 2 navigation, frontier exploration, simulation, robot networking, and system integration. That experience later helped me secure my first robotics-navigation internship at [Griffin Labs](https://griffinlabs.ai/). The course experience was rough, but the learning was real.
+
+- Frontier Exploration Demo In Simulation (20 March 2026, Week 9 Fri)
+
+https://github.com/user-attachments/assets/755e566e-a58e-4059-8860-4c8718844997
+
+- Turtlebot Navigation Demo Video (21 March 2026, Week 9 Sat)
+
+https://github.com/user-attachments/assets/281b9f60-19b3-4af7-8525-cc15e1a01227
 
 ## System Overview
 
